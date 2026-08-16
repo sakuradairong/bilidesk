@@ -23,6 +23,9 @@ export type VideoCard = {
   owner: string;
   duration: number;
   views: number;
+  aid?: number;
+  cid?: number | null;
+  owner_face?: string;
 };
 
 export type SearchResult = {
@@ -46,6 +49,13 @@ export type VideoDetail = {
   owner: string;
   duration: number;
   pages: VideoPage[];
+  owner_face?: string;
+  season_title?: string;
+  like?: number;
+  coin?: number;
+  favorite?: number;
+  share?: number;
+  reply?: number;
 };
 
 export type QualityOption = {
@@ -78,4 +88,18 @@ export type PlayerProgress = {
   volume: number;
 };
 
-export type PageId = "home" | "search" | "history";
+export type CommentItem = {
+  rpid: number;
+  mid: number;
+  name: string;
+  face: string;
+  message: string;
+  like: number;
+};
+
+export type CommentPage = {
+  items: CommentItem[];
+  all_count: number;
+};
+
+export type PageId = "home" | "featured" | "search" | "history";

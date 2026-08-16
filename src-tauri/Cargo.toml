@@ -18,7 +18,18 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "deflate", "brotli", "rustls-tls"] }
+flate2 = "1"
 thiserror = "2"
 md-5 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 url = "2"
+libloading = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }

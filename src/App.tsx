@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { VideoGridPage } from "./pages/VideoGridPage";
 import { PlayerPage } from "./pages/PlayerPage";
+import { FeaturedPage } from "./pages/FeaturedPage";
 import type { HistoryItem, PageId, Profile, VideoCard } from "./types";
 import "./styles.css";
 
@@ -116,6 +117,9 @@ export default function App() {
           )}
           {page === "search" && (
             <VideoGridPage items={searchItems} loading={loading} error={error} onOpen={setPlaying} />
+          )}
+          {page === "featured" && (
+            <FeaturedPage onNeedLogin={() => setLoginOpen(true)} loginOpen={loginOpen} />
           )}
           {page === "history" && (
             <VideoGridPage items={historyCards} loading={false} error={error} onOpen={setPlaying} />

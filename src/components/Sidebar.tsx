@@ -2,6 +2,7 @@ import type { PageId } from "../types";
 
 const ITEMS: { id: PageId; label: string }[] = [
   { id: "home", label: "推荐" },
+  { id: "featured", label: "精选" },
   { id: "search", label: "搜索" },
   { id: "history", label: "历史" },
 ];

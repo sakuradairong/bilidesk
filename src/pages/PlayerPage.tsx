@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   playerOpen,
   playerSeek,
+  playerSetBounds,
   playerSetDanmaku,
   playerSetDanmakuPrefs,
   playerSetVolume,
@@ -28,16 +29,51 @@ export function PlayerPage({ bvid, onBack }: Props) {
   const [danmaku, setDanmaku] = useState(true);
   const [error, setError] = useState("");
   const [density, setDensity] = useState("12");
+  const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    document.documentElement.classList.add("player-mode");
+    return () => document.documentElement.classList.remove("player-mode");
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const publish = () => {
+      const rect = el.getBoundingClientRect();
+      void playerSetBounds({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    window.addEventListener("resize", publish);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", publish);
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenError: (() => void) | undefined;
     listen<PlayerProgress>("player-progress", (event) => {
       setProgress(event.payload);
     }).then((fn) => {
-      unlisten = fn;
+      unlistenProgress = fn;
+    });
+    listen<string>("player-error", (event) => {
+      setError(event.payload);
+    }).then((fn) => {
+      unlistenError = fn;
     });
     return () => {
-      unlisten?.();
+      unlistenProgress?.();
+      unlistenError?.();
     };
   }, []);
 
@@ -116,7 +152,7 @@ export function PlayerPage({ bvid, onBack }: Props) {
         </button>
         <div className="player-title">{session?.title ?? "正在打开…"}</div>
       </header>
-      <div className="player-stage" onClick={() => void playerTogglePause()} />
+      <div className="player-stage" ref={stageRef} onClick={() => void playerTogglePause()} />
       {error ? <p className="error-line" style={{ padding: "0 16px" }}>{error}</p> : null}
       <footer>
         <button className="ghost-btn" onClick={() => void playerTogglePause()}>

@@ -21,7 +21,7 @@ pub struct QrPoll {
     pub profile: Option<Profile>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VideoCard {
     pub bvid: String,
     pub title: String,
@@ -29,6 +29,12 @@ pub struct VideoCard {
     pub owner: String,
     pub duration: i64,
     pub views: i64,
+    #[serde(default)]
+    pub aid: i64,
+    #[serde(default)]
+    pub cid: Option<i64>,
+    #[serde(default)]
+    pub owner_face: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +61,20 @@ pub struct VideoDetail {
     pub owner: String,
     pub duration: i64,
     pub pages: Vec<VideoPage>,
+    #[serde(default)]
+    pub owner_face: String,
+    #[serde(default)]
+    pub season_title: String,
+    #[serde(default)]
+    pub like: i64,
+    #[serde(default)]
+    pub coin: i64,
+    #[serde(default)]
+    pub favorite: i64,
+    #[serde(default)]
+    pub share: i64,
+    #[serde(default)]
+    pub reply: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +109,28 @@ pub struct PlayerProgress {
     pub duration: f64,
     pub paused: bool,
     pub volume: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommentItem {
+    pub rpid: i64,
+    pub mid: i64,
+    pub name: String,
+    pub face: String,
+    pub message: String,
+    pub like: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommentPage {
+    pub items: Vec<CommentItem>,
+    pub all_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavFolder {
+    pub id: i64,
+    pub title: String,
 }
 
 #[derive(Debug, Clone)]

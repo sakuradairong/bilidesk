@@ -1,3 +1,4 @@
+import { mediaSrc } from "../media";
 import type { VideoCard } from "../types";
 
 type Props = {
@@ -9,7 +10,14 @@ export function VideoCardView({ card, onOpen }: Props) {
   return (
     <button className="card" onClick={() => onOpen(card.bvid)}>
       <div className="cover">
-        {card.cover ? <img src={card.cover} alt="" /> : null}
+        {card.cover ? (
+          <img
+            src={mediaSrc(card.cover)}
+            alt=""
+            onLoad={(event) => event.currentTarget.classList.add("ready")}
+            onError={(event) => event.currentTarget.remove()}
+          />
+        ) : null}
         <span className="duration">{formatDuration(card.duration)}</span>
       </div>
       <div className="card-body">

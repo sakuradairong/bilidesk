@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { mediaSrc } from "../media";
 import type { Profile } from "../types";
 
 type Props = {
@@ -29,7 +30,13 @@ export function TopBar({ query, onQuery, onSearch, profile, onLogin, onLogout }:
       </button>
       {profile?.is_login ? (
         <button className="user-chip" type="button" onClick={onLogout} title="点击退出登录">
-          {profile.face ? <img src={profile.face} alt="" /> : null}
+          {profile.face ? (
+            <img
+              src={mediaSrc(profile.face)}
+              alt=""
+              onError={(event) => event.currentTarget.remove()}
+            />
+          ) : null}
           {profile.name}
         </button>
       ) : (

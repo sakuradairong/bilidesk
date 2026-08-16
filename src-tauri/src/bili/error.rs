@@ -24,7 +24,14 @@ impl BiliError {
 
 impl From<reqwest::Error> for BiliError {
     fn from(err: reqwest::Error) -> Self {
-        Self::Network(err.to_string())
+        let mut msg = err.to_string();
+        let mut source = std::error::Error::source(&err);
+        while let Some(inner) = source {
+            msg.push_str(" <- ");
+            msg.push_str(&inner.to_string());
+            source = inner.source();
+        }
+        Self::Network(msg)
     }
 }
 

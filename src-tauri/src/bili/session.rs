@@ -14,6 +14,17 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn csrf(&self) -> Option<String> {
+        self.cookies
+            .get("bili_jct")
+            .cloned()
+            .filter(|value| !value.is_empty())
+    }
+
+    pub fn mid(&self) -> Option<i64> {
+        self.cookies.get("DedeUserID")?.parse().ok()
+    }
+
     pub fn cookie_header(&self) -> String {
         self.cookies
             .iter()
@@ -68,7 +79,13 @@ impl Session {
     }
 
     pub fn clear_login(&mut self) {
-        for key in ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid"] {
+        for key in [
+            "SESSDATA",
+            "bili_jct",
+            "DedeUserID",
+            "DedeUserID__ckMd5",
+            "sid",
+        ] {
             self.cookies.remove(key);
         }
     }
@@ -108,10 +125,8 @@ mod tests {
 
     #[test]
     fn parse_set_cookie_takes_first_pair() {
-        let (name, value) = parse_cookie_pair(
-            "SESSDATA=abc123; Path=/; Domain=.bilibili.com; HttpOnly",
-        )
-        .unwrap();
+        let (name, value) =
+            parse_cookie_pair("SESSDATA=abc123; Path=/; Domain=.bilibili.com; HttpOnly").unwrap();
         assert_eq!(name, "SESSDATA");
         assert_eq!(value, "abc123");
     }

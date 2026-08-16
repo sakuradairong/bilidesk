@@ -24,7 +24,7 @@ React (WebView2)  --invoke-->  Rust Tauri
                                  ├─ bili::wbi       WBI 签名
                                  ├─ bili::client    登录、推荐、搜索、view、playurl、弹幕
                                  ├─ bili::danmaku   XML/字段 → ASS
-                                 └─ player          HWND 嵌入 mpv，IPC 控制
+                                 └─ player          HWND 嵌入 + 进程内 libmpv-2.dll
 ```
 
 - UI 不直接访问 B 站域名；所有请求由 Rust 发出，统一 UA、`Referer: https://www.bilibili.com`、Cookie、WBI。
@@ -39,7 +39,7 @@ React (WebView2)  --invoke-->  Rust Tauri
 | `session` | 读写 Cookie、登录态 | `cookies()`, `save()`, `clear()` | 文件系统 |
 | `client` | B 站 HTTP | DTO 结构体 | wbi + session |
 | `danmaku` | 弹幕 → ASS 文本 | `to_ass(events, opts)` | 无 |
-| `player` | 启停 mpv、seek、音量、字幕 | Tauri events + commands | playurl 结果、ASS 路径 |
+| `player` | 启停 libmpv、seek、音量、字幕 | Tauri events + commands | playurl 结果、ASS 路径 |
 | React shell | 路由、列表、登录框、控制条 | invoke | 上述 commands |
 
 ## 4. API 适配（网页端）
@@ -65,11 +65,11 @@ Cookie 存在应用数据目录。Windows 上优先 DPAPI（`CryptProtectData`�
 1. 取 `view` 得 `aid`/`bvid`/`cid`/pages。
 2. 取 playurl DASH，列出当前响应里真实出现的 `video`/`audio` 流（id/quality）。
 3. 默认选最高可用视频轨 + 最高可用音频轨。
-4. 将 URL 与 `Referer`/`Cookie`/`User-Agent` 交给 mpv（`--http-header-fields`，视频主文件 + `--audio-file`）。
-5. 弹幕 ASS 写入临时文件，`sub-file` 加载。
+4. 将 URL 与 `Referer`/`Cookie`/`User-Agent` 交给进程内 libmpv（`http-header-fields`，视频主文件 + `audio-add`）。
+5. 弹幕 ASS 写入临时文件，`sub-add` 加载。
 6. 控制：空格暂停、进度条 seek、音量、开关弹幕、清晰度、分P。
 
-打包：优先捆绑 `mpv.exe` 或 `libmpv-2.dll`（LGPL，README 指向 mpv 源码）。开发机若 PATH 已有 mpv 也可。
+打包：捆绑 `libmpv-2.dll`（LGPL，README 指向 mpv 源码与 zhongfly `mpv-dev-lgpl` 构建）。开发时放到 `src-tauri/vendor/mpv/` 或设置 `BILIDESK_MPV`。
 
 ## 7. 弹幕
 

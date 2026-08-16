@@ -32,7 +32,9 @@ impl BiliClient {
         let http = reqwest::Client::builder()
             .gzip(true)
             .brotli(true)
-            .deflate(true)
+            // B 站弹幕 list.so 把 raw deflate 标成 Content-Encoding: deflate，
+            // reqwest 默认按 zlib 解会失败。关掉自动 deflate，改走手动 inflate。
+            .deflate(false)
             .build()?;
         Ok(Self {
             http,
@@ -46,22 +48,39 @@ impl BiliClient {
         std::fs::create_dir_all(&dir)?;
         let path = session::session_path(&dir);
         let loaded = Session::load(&path)?;
-        *self.session.lock().map_err(|_| BiliError::msg("会话锁失败"))? = loaded;
-        *self.data_dir.lock().map_err(|_| BiliError::msg("路径锁失败"))? = dir;
+        *self
+            .session
+            .lock()
+            .map_err(|_| BiliError::msg("会话锁失败"))? = loaded;
+        *self
+            .data_dir
+            .lock()
+            .map_err(|_| BiliError::msg("路径锁失败"))? = dir;
         Ok(())
     }
 
     fn persist(&self) -> BiliResult<()> {
-        let dir = self.data_dir.lock().map_err(|_| BiliError::msg("路径锁失败"))?.clone();
+        let dir = self
+            .data_dir
+            .lock()
+            .map_err(|_| BiliError::msg("路径锁失败"))?
+            .clone();
         if dir.as_os_str().is_empty() {
             return Ok(());
         }
-        let session = self.session.lock().map_err(|_| BiliError::msg("会话锁失败"))?.clone();
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| BiliError::msg("会话锁失败"))?
+            .clone();
         session.save(&session::session_path(&dir))
     }
 
     fn cookie_header(&self) -> BiliResult<String> {
-        let mut session = self.session.lock().map_err(|_| BiliError::msg("会话锁失败"))?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| BiliError::msg("会话锁失败"))?;
         session.ensure_buvid();
         Ok(session.cookie_header())
     }
@@ -69,7 +88,10 @@ impl BiliClient {
     fn headers(&self) -> BiliResult<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(Session::user_agent()));
-        headers.insert(REFERER, HeaderValue::from_static("https://www.bilibili.com/"));
+        headers.insert(
+            REFERER,
+            HeaderValue::from_static("https://www.bilibili.com/"),
+        );
         let cookies = self.cookie_header()?;
         if !cookies.is_empty() {
             if let Ok(value) = HeaderValue::from_str(&cookies) {
@@ -79,21 +101,60 @@ impl BiliClient {
         Ok(headers)
     }
 
+    fn csrf(&self) -> BiliResult<String> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| BiliError::msg("会话锁失败"))?;
+        session
+            .csrf()
+            .ok_or_else(|| BiliError::msg("未登录"))
+    }
+
+    fn logged_mid(&self) -> BiliResult<i64> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| BiliError::msg("会话锁失败"))?;
+        session.mid().ok_or_else(|| BiliError::msg("未登录"))
+    }
+
+    async fn post_form(&self, url: &str, form: &[(&str, String)]) -> BiliResult<Value> {
+        let pairs: Vec<(&str, &str)> = form.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let response = self
+            .http
+            .post(url)
+            .headers(self.headers()?)
+            .form(&pairs)
+            .send()
+            .await?;
+        self.capture_cookies(&response);
+        let bytes = read_decoded(response).await?;
+        let value: Value = serde_json::from_slice(&bytes)?;
+        check_code(&value)?;
+        Ok(value)
+    }
+
     async fn get_json(&self, url: &str) -> BiliResult<Value> {
         let response = self.http.get(url).headers(self.headers()?).send().await?;
         self.capture_cookies(&response);
         let status = response.status();
-        let text = response.text().await?;
+        let bytes = read_decoded(response).await?;
         if !status.is_success() {
-            return Err(BiliError::Api(format!("HTTP {status}: {}", truncate(&text, 180))));
+            let text = String::from_utf8_lossy(&bytes);
+            return Err(BiliError::Api(format!(
+                "HTTP {status}: {}",
+                truncate(&text, 180)
+            )));
         }
-        Ok(serde_json::from_str(&text)?)
+        Ok(serde_json::from_slice(&bytes)?)
     }
 
     async fn get_text(&self, url: &str) -> BiliResult<String> {
         let response = self.http.get(url).headers(self.headers()?).send().await?;
         self.capture_cookies(&response);
-        Ok(response.text().await?)
+        let bytes = read_decoded(response).await?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     fn capture_cookies(&self, response: &reqwest::Response) {
@@ -194,7 +255,10 @@ impl BiliClient {
 
     pub fn logout(&self) -> BiliResult<()> {
         {
-            let mut session = self.session.lock().map_err(|_| BiliError::msg("会话锁失败"))?;
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| BiliError::msg("会话锁失败"))?;
             session.clear_login();
         }
         if let Ok(mut keys) = self.wbi_keys.lock() {
@@ -224,12 +288,23 @@ impl BiliClient {
         params.insert("brush".into(), "0".into());
         params.insert("feed_version".into(), "V3".into());
         let value = self.wbi_query(FEED, params).await?;
-        let items = value["data"]["item"]
-            .as_array()
-            .cloned()
-            .or_else(|| value["data"]["items"].as_array().cloned())
-            .unwrap_or_default();
-        Ok(items.iter().filter_map(parse_card).collect())
+        Ok(cards_from_feed(&value))
+    }
+
+    pub async fn selected(&self, fresh_idx: u32, fresh_type: u32) -> BiliResult<Vec<VideoCard>> {
+        let mut params = BTreeMap::new();
+        params.insert("fresh_idx".into(), fresh_idx.max(1).to_string());
+        params.insert("fresh_idx_1h".into(), fresh_idx.max(1).to_string());
+        params.insert("brush".into(), "0".into());
+        params.insert("feed_version".into(), "CLIENT_SELECTED".into());
+        params.insert("plat".into(), "1".into());
+        params.insert("ps".into(), "10".into());
+        params.insert("fresh_type".into(), fresh_type.to_string());
+        let value = self.wbi_query(FEED, params).await?;
+        Ok(cards_from_feed(&value)
+            .into_iter()
+            .filter(|card| card.cid.unwrap_or(0) > 0)
+            .collect())
     }
 
     pub async fn search(&self, keyword: &str, page: u32) -> BiliResult<SearchResult> {
@@ -279,6 +354,13 @@ impl BiliClient {
             owner: data["owner"]["name"].as_str().unwrap_or("").to_string(),
             duration: data["duration"].as_i64().unwrap_or(0),
             pages,
+            owner_face: https_url(data["owner"]["face"].as_str().unwrap_or_default()),
+            season_title: data["ugc_season"]["title"].as_str().unwrap_or("").to_string(),
+            like: data["stat"]["like"].as_i64().unwrap_or(0),
+            coin: data["stat"]["coin"].as_i64().unwrap_or(0),
+            favorite: data["stat"]["favorite"].as_i64().unwrap_or(0),
+            share: data["stat"]["share"].as_i64().unwrap_or(0),
+            reply: data["stat"]["reply"].as_i64().unwrap_or(0),
         })
     }
 
@@ -303,7 +385,10 @@ impl BiliClient {
                 if let Some(url) = durl["url"].as_str() {
                     choices.push(StreamChoice {
                         quality: data["quality"].as_i64().unwrap_or(0),
-                        desc: data["quality"].as_i64().map(quality_name).unwrap_or_else(|| "默认".into()),
+                        desc: data["quality"]
+                            .as_i64()
+                            .map(quality_name)
+                            .unwrap_or_else(|| "默认".into()),
                         codecs: String::new(),
                         video_url: url.to_string(),
                         audio_url: None,
@@ -324,8 +409,41 @@ impl BiliClient {
         Ok(danmaku::to_ass(&items, opts))
     }
 
+    pub async fn fetch_allowed_image(&self, raw_url: &str) -> BiliResult<(String, Vec<u8>)> {
+        let parsed = super::media::validate_and_url(raw_url)?;
+        let response = self
+            .http
+            .get(parsed)
+            .headers(self.headers()?)
+            .send()
+            .await?;
+        let final_host = response.url().host_str().unwrap_or_default();
+        if !super::media::is_allowed_host(final_host) {
+            return Err(BiliError::msg("图床跳转到未知域名"));
+        }
+        let status = response.status();
+        if !status.is_success() {
+            return Err(BiliError::msg(format!("封面 HTTP {status}")));
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("image/jpeg")
+            .to_string();
+        let bytes = read_decoded(response).await?;
+        if bytes.len() > 8 * 1024 * 1024 {
+            return Err(BiliError::msg("封面过大"));
+        }
+        Ok((content_type, bytes))
+    }
+
     pub fn push_history(&self, item: HistoryItem) -> BiliResult<()> {
-        let dir = self.data_dir.lock().map_err(|_| BiliError::msg("路径锁失败"))?.clone();
+        let dir = self
+            .data_dir
+            .lock()
+            .map_err(|_| BiliError::msg("路径锁失败"))?
+            .clone();
         if dir.as_os_str().is_empty() {
             return Ok(());
         }
@@ -337,7 +455,11 @@ impl BiliClient {
     }
 
     pub fn history(&self) -> BiliResult<Vec<HistoryItem>> {
-        let dir = self.data_dir.lock().map_err(|_| BiliError::msg("路径锁失败"))?.clone();
+        let dir = self
+            .data_dir
+            .lock()
+            .map_err(|_| BiliError::msg("路径锁失败"))?
+            .clone();
         if dir.as_os_str().is_empty() {
             return Ok(Vec::new());
         }
@@ -351,6 +473,189 @@ impl BiliClient {
             format!("Cookie: {}", self.cookie_header()?),
         ])
     }
+
+    pub async fn like(&self, aid: i64, unlike: bool) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(
+            "https://api.bilibili.com/x/web-interface/archive/like",
+            &[
+                ("aid", aid.to_string()),
+                ("like", if unlike { "2" } else { "1" }.into()),
+                ("csrf", csrf),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn dislike(&self, aid: i64, cancel: bool) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        let url = if cancel {
+            "https://api.bilibili.com/x/web-interface/feedback/dislike/cancel"
+        } else {
+            "https://api.bilibili.com/x/web-interface/feedback/dislike"
+        };
+        self.post_form(url, &[("aid", aid.to_string()), ("csrf", csrf)])
+            .await?;
+        Ok(())
+    }
+
+    pub async fn coin(&self, aid: i64) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(
+            "https://api.bilibili.com/x/web-interface/coin/add",
+            &[
+                ("aid", aid.to_string()),
+                ("multiply", "1".into()),
+                ("select_like", "0".into()),
+                ("csrf", csrf),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn fav_folders(&self) -> BiliResult<Vec<FavFolder>> {
+        let mid = self.logged_mid()?;
+        let url = format!(
+            "https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={mid}"
+        );
+        let value = self.get_json(&url).await?;
+        check_code(&value)?;
+        Ok(parse_fav_folders(&value))
+    }
+
+    pub async fn fav_add(&self, aid: i64, media_id: Option<i64>) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        let folder = match media_id {
+            Some(id) => id,
+            None => {
+                self.fav_folders()
+                    .await?
+                    .first()
+                    .map(|f| f.id)
+                    .ok_or_else(|| BiliError::msg("没有可用收藏夹"))?
+            }
+        };
+        self.post_form(
+            "https://api.bilibili.com/x/v3/fav/resource/deal",
+            &[
+                ("rid", aid.to_string()),
+                ("type", "2".into()),
+                ("add_media_ids", folder.to_string()),
+                ("csrf", csrf),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn danmaku_post(
+        &self,
+        aid: i64,
+        cid: i64,
+        bvid: &str,
+        message: &str,
+        progress_ms: i64,
+    ) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        let _ = aid;
+        self.post_form(
+            "https://api.bilibili.com/x/v2/dm/post",
+            &[
+                ("type", "1".into()),
+                ("oid", cid.to_string()),
+                ("msg", message.to_string()),
+                ("bvid", bvid.to_string()),
+                ("progress", progress_ms.max(0).to_string()),
+                ("mode", "1".into()),
+                ("fontsize", "25".into()),
+                ("color", "16777215".into()),
+                ("rnd", unix_ms().to_string()),
+                ("csrf", csrf),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn reply_list(&self, aid: i64) -> BiliResult<CommentPage> {
+        let mut params = BTreeMap::new();
+        params.insert("oid".into(), aid.to_string());
+        params.insert("type".into(), "1".into());
+        params.insert("mode".into(), "3".into());
+        params.insert("ps".into(), "20".into());
+        let value = self
+            .wbi_query("https://api.bilibili.com/x/v2/reply/wbi/main", params)
+            .await?;
+        Ok(parse_comments(&value))
+    }
+
+    pub async fn reply_add(&self, aid: i64, message: &str, parent: Option<i64>) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        let mut form = vec![
+            ("oid", aid.to_string()),
+            ("type", "1".into()),
+            ("message", message.to_string()),
+            ("plat", "1".into()),
+            ("csrf", csrf),
+        ];
+        if let Some(id) = parent {
+            form.push(("root", id.to_string()));
+            form.push(("parent", id.to_string()));
+        }
+        self.post_form("https://api.bilibili.com/x/v2/reply/add", &form)
+            .await?;
+        Ok(())
+    }
+}
+
+fn unix_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+fn parse_fav_folders(value: &Value) -> Vec<FavFolder> {
+    value["data"]["list"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            Some(FavFolder {
+                id: item["id"].as_i64()?,
+                title: item["title"].as_str().unwrap_or("收藏夹").to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_comments(value: &Value) -> CommentPage {
+    let items: Vec<CommentItem> = value["data"]["replies"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            Some(CommentItem {
+                rpid: item["rpid"].as_i64()?,
+                mid: item["mid"].as_i64().unwrap_or(0),
+                name: item["member"]["uname"].as_str().unwrap_or("").to_string(),
+                face: https_url(item["member"]["avatar"].as_str().unwrap_or_default()),
+                message: item["content"]["message"].as_str().unwrap_or("").to_string(),
+                like: item["like"].as_i64().unwrap_or(0),
+            })
+        })
+        .collect();
+    CommentPage {
+        all_count: value["data"]["cursor"]["all_count"]
+            .as_i64()
+            .or_else(|| value["data"]["page"]["count"].as_i64())
+            .unwrap_or(items.len() as i64),
+        items,
+    }
 }
 
 fn parse_dash(data: &Value) -> Vec<StreamChoice> {
@@ -358,7 +663,8 @@ fn parse_dash(data: &Value) -> Vec<StreamChoice> {
     let audio = dash["audio"]
         .as_array()
         .and_then(|arr| {
-            arr.iter().max_by_key(|a| a["bandwidth"].as_u64().unwrap_or(0))
+            arr.iter()
+                .max_by_key(|a| a["bandwidth"].as_u64().unwrap_or(0))
         })
         .and_then(|a| a["baseUrl"].as_str().or_else(|| a["base_url"].as_str()))
         .map(|s| s.to_string());
@@ -367,7 +673,9 @@ fn parse_dash(data: &Value) -> Vec<StreamChoice> {
         return videos;
     };
     for video in arr {
-        let Some(quality) = video["id"].as_i64() else { continue };
+        let Some(quality) = video["id"].as_i64() else {
+            continue;
+        };
         let url = video["baseUrl"]
             .as_str()
             .or_else(|| video["base_url"].as_str())
@@ -433,7 +741,29 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
             .as_i64()
             .or_else(|| value["play"].as_i64())
             .unwrap_or(0),
+        aid: value["aid"]
+            .as_i64()
+            .or_else(|| value["id"].as_i64())
+            .unwrap_or(0),
+        cid: value["cid"].as_i64().filter(|cid| *cid > 0),
+        owner_face: https_url(
+            value["owner"]["face"]
+                .as_str()
+                .or_else(|| value["face"].as_str())
+                .unwrap_or_default(),
+        ),
     })
+}
+
+fn cards_from_feed(value: &Value) -> Vec<VideoCard> {
+    value["data"]["item"]
+        .as_array()
+        .cloned()
+        .or_else(|| value["data"]["items"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(parse_card)
+        .collect()
 }
 
 fn parse_search_card(value: &Value) -> Option<VideoCard> {
@@ -451,10 +781,7 @@ fn parse_duration(value: &Value) -> i64 {
         return n;
     }
     if let Some(s) = value["duration"].as_str() {
-        let parts: Vec<i64> = s
-            .split(':')
-            .filter_map(|p| p.parse().ok())
-            .collect();
+        let parts: Vec<i64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
         return match parts.as_slice() {
             [h, m, s] => h * 3600 + m * 60 + s,
             [m, s] => m * 60 + s,
@@ -498,6 +825,7 @@ fn check_code(value: &Value) -> BiliResult<()> {
     match value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) {
         0 => Ok(()),
         -101 => Err(BiliError::msg("未登录")),
+        -352 | -412 => Err(BiliError::msg("请求被风控，请稍后重试或重新登录")),
         other => Err(BiliError::Api(
             value
                 .get("message")
@@ -511,7 +839,9 @@ fn check_code(value: &Value) -> BiliResult<()> {
 fn map_play_error(data: &Value) -> Option<BiliError> {
     let message = data["message"].as_str().unwrap_or("");
     if message.contains("大会员") {
-        Some(BiliError::msg("该清晰度需要大会员，已回退到当前账号可用的最高清晰度"))
+        Some(BiliError::msg(
+            "该清晰度需要大会员，已回退到当前账号可用的最高清晰度",
+        ))
     } else if !message.is_empty() {
         Some(BiliError::Api(message.to_string()))
     } else {
@@ -545,6 +875,17 @@ fn truncate(text: &str, max: usize) -> String {
     }
 }
 
+async fn read_decoded(response: reqwest::Response) -> BiliResult<Vec<u8>> {
+    let encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let bytes = response.bytes().await?;
+    Ok(super::inflate::decode_encoded(&encoding, &bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +909,75 @@ mod tests {
     }
 
     #[test]
+    fn selected_feed_keeps_only_cards_with_cid() {
+        let feed = json!({
+            "data": {
+                "item": [
+                    {
+                        "goto": "av",
+                        "bvid": "BV1keep11111",
+                        "id": 101,
+                        "cid": 202,
+                        "title": "ok",
+                        "cover": "https://i0.hdslb.com/a.jpg",
+                        "owner": { "name": "up", "face": "//i0.hdslb.com/f.png" }
+                    },
+                    {
+                        "goto": "live",
+                        "bvid": "",
+                        "title": "live"
+                    },
+                    {
+                        "goto": "av",
+                        "bvid": "BV1drop22222",
+                        "title": "no cid"
+                    }
+                ]
+            }
+        });
+        let cards: Vec<_> = cards_from_feed(&feed)
+            .into_iter()
+            .filter(|card| card.cid.unwrap_or(0) > 0)
+            .collect();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].bvid, "BV1keep11111");
+        assert_eq!(cards[0].aid, 101);
+        assert_eq!(cards[0].cid, Some(202));
+        assert_eq!(cards[0].owner_face, "https://i0.hdslb.com/f.png");
+    }
+
+    #[test]
+    fn csrf_missing_is_logged_out() {
+        let session = crate::bili::session::Session::default();
+        assert!(session.csrf().is_none());
+        let mut session = crate::bili::session::Session::default();
+        session.cookies.insert("bili_jct".into(), "abc".into());
+        assert_eq!(session.csrf().as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn parse_comments_from_fixture() {
+        let value = json!({
+            "data": {
+                "cursor": { "all_count": 3 },
+                "replies": [
+                    {
+                        "rpid": 9,
+                        "mid": 1,
+                        "like": 2,
+                        "member": { "uname": "a", "avatar": "//i0.hdslb.com/a.png" },
+                        "content": { "message": "hi" }
+                    }
+                ]
+            }
+        });
+        let page = parse_comments(&value);
+        assert_eq!(page.all_count, 3);
+        assert_eq!(page.items[0].message, "hi");
+        assert_eq!(page.items[0].face, "https://i0.hdslb.com/a.png");
+    }
+
+    #[test]
     fn search_title_strips_em() {
         let item = json!({
             "bvid": "BV1xx411c7mD",
@@ -579,5 +989,17 @@ mod tests {
         let card = parse_search_card(&item).unwrap();
         assert_eq!(card.title, "rust 入门");
         assert_eq!(card.duration, 62);
+    }
+
+    #[test]
+    #[ignore = "hits live Bilibili danmaku"]
+    fn live_danmaku_inflates_raw_deflate() {
+        let client = BiliClient::new().expect("client");
+        let ass = tauri::async_runtime::block_on(client.danmaku_ass(
+            40217479053,
+            &crate::bili::danmaku::DanmakuOptions::default(),
+        ));
+        let ass = ass.expect("danmaku should inflate");
+        assert!(ass.contains("Dialogue:"), "ass={ass}");
     }
 }

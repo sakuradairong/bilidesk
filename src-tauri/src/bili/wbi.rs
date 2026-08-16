@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn sign_strips_forbidden_value_chars() {
         let mut params = BTreeMap::new();
-        params.insert("keyword".into(), "hello!()*" .into());
+        params.insert("keyword".into(), "hello!()*".into());
         let signed = sign(params, "ea1db124af3c7062474693fa704f4ff8", 1);
         assert_eq!(signed.get("keyword").unwrap(), "hello");
     }

@@ -35,7 +35,9 @@ pub fn parse_xml(xml: &str) -> Vec<Danmaku> {
         rest = &rest[p_end + 1..];
         let Some(gt) = rest.find('>') else { break };
         rest = &rest[gt + 1..];
-        let Some(close) = rest.find("</d>") else { break };
+        let Some(close) = rest.find("</d>") else {
+            break;
+        };
         let raw_text = &rest[..close];
         rest = &rest[close + 4..];
         let mut cols = attrs.split(',');
