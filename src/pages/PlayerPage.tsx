@@ -1,0 +1,190 @@
+import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import {
+  playerOpen,
+  playerSeek,
+  playerSetDanmaku,
+  playerSetDanmakuPrefs,
+  playerSetVolume,
+  playerStop,
+  playerTogglePause,
+} from "../api";
+import { formatDuration } from "../components/VideoCard";
+import type { PlaySession, PlayerProgress } from "../types";
+
+type Props = {
+  bvid: string;
+  onBack: () => void;
+};
+
+export function PlayerPage({ bvid, onBack }: Props) {
+  const [session, setSession] = useState<PlaySession | null>(null);
+  const [progress, setProgress] = useState<PlayerProgress>({
+    time: 0,
+    duration: 0,
+    paused: false,
+    volume: 80,
+  });
+  const [danmaku, setDanmaku] = useState(true);
+  const [error, setError] = useState("");
+  const [density, setDensity] = useState("12");
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<PlayerProgress>("player-progress", (event) => {
+      setProgress(event.payload);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.code === "Space") {
+        event.preventDefault();
+        void playerTogglePause();
+      } else if (event.code === "ArrowRight") {
+        void playerSeek(progress.time + 5);
+      } else if (event.code === "ArrowLeft") {
+        void playerSeek(Math.max(progress.time - 5, 0));
+      } else if (event.code === "Escape") {
+        onBack();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack, progress.time]);
+
+  useEffect(() => {
+    let cancelled = false;
+    playerOpen(bvid)
+      .then((next) => {
+        if (!cancelled) setSession(next);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+      void playerStop();
+    };
+  }, [bvid]);
+
+  const qualityOptions = useMemo(() => session?.qualities ?? [], [session]);
+
+  async function changePage(cid: number) {
+    if (!session) return;
+    try {
+      setError("");
+      setSession(await playerOpen(session.bvid, cid, session.current_quality));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function changeQuality(quality: number) {
+    if (!session) return;
+    try {
+      const time = progress.time;
+      setSession(await playerOpen(session.bvid, session.cid, quality));
+      if (time > 1) {
+        await playerSeek(time);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function toggleDanmaku() {
+    const next = !danmaku;
+    setDanmaku(next);
+    try {
+      await playerSetDanmaku(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <div className="player-page">
+      <header>
+        <button className="ghost-btn" onClick={onBack}>
+          返回
+        </button>
+        <div className="player-title">{session?.title ?? "正在打开…"}</div>
+      </header>
+      <div className="player-stage" onClick={() => void playerTogglePause()} />
+      {error ? <p className="error-line" style={{ padding: "0 16px" }}>{error}</p> : null}
+      <footer>
+        <button className="ghost-btn" onClick={() => void playerTogglePause()}>
+          {progress.paused ? "播放" : "暂停"}
+        </button>
+        <span className="time-label">
+          {formatDuration(progress.time)} / {formatDuration(progress.duration)}
+        </span>
+        <input
+          className="progress"
+          type="range"
+          min={0}
+          max={Math.max(progress.duration, 1)}
+          step={0.1}
+          value={progress.time}
+          onChange={(e) => void playerSeek(Number(e.target.value))}
+        />
+        <input
+          type="range"
+          min={0}
+          max={130}
+          value={progress.volume}
+          onChange={(e) => void playerSetVolume(Number(e.target.value))}
+          title="音量"
+        />
+        <select
+          value={session?.cid ?? ""}
+          onChange={(e) => void changePage(Number(e.target.value))}
+        >
+          {(session?.pages ?? []).map((page) => (
+            <option key={page.cid} value={page.cid}>
+              P{page.page} {page.part}
+            </option>
+          ))}
+        </select>
+        <select
+          value={session?.current_quality ?? ""}
+          onChange={(e) => void changeQuality(Number(e.target.value))}
+        >
+          {qualityOptions.map((option) => (
+            <option key={option.quality} value={option.quality}>
+              {option.desc}
+            </option>
+          ))}
+        </select>
+        <button className="ghost-btn" onClick={() => void toggleDanmaku()}>
+          弹幕 {danmaku ? "开" : "关"}
+        </button>
+        <select
+          value={density}
+          onChange={(e) => {
+            setDensity(e.target.value);
+            void playerSetDanmakuPrefs(undefined, Number(e.target.value));
+          }}
+        >
+          <option value="8">弹幕稀</option>
+          <option value="12">弹幕中</option>
+          <option value="18">弹幕密</option>
+        </select>
+        <select
+          defaultValue="48"
+          onChange={(e) => void playerSetDanmakuPrefs(Number(e.target.value), undefined)}
+        >
+          <option value="36">字号小</option>
+          <option value="48">字号中</option>
+          <option value="64">字号大</option>
+        </select>
+      </footer>
+    </div>
+  );
+}
