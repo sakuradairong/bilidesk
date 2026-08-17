@@ -18,6 +18,7 @@ const SEARCH: &str = "https://api.bilibili.com/x/web-interface/wbi/search/type";
 const VIEW: &str = "https://api.bilibili.com/x/web-interface/view";
 const PLAYURL: &str = "https://api.bilibili.com/x/player/wbi/playurl";
 const DANMAKU: &str = "https://api.bilibili.com/x/v1/dm/list.so";
+const ARCHIVE_RELATION: &str = "https://api.bilibili.com/x/web-interface/archive/relation";
 
 #[derive(Clone)]
 pub struct BiliClient {
@@ -399,7 +400,9 @@ impl BiliClient {
         if choices.is_empty() {
             return Err(map_play_error(data).unwrap_or(BiliError::NoPlayUrl));
         }
-        let current = pick_quality(&choices, quality).clone();
+        let current = pick_quality(&choices, quality)
+            .ok_or(BiliError::NoPlayUrl)?
+            .clone();
         Ok((choices, current))
     }
 
@@ -472,6 +475,14 @@ impl BiliClient {
             "Referer: https://www.bilibili.com/".into(),
             format!("Cookie: {}", self.cookie_header()?),
         ])
+    }
+
+    pub async fn archive_relation(&self, aid: i64) -> BiliResult<ArchiveRelation> {
+        let value = self
+            .get_json(&format!("{ARCHIVE_RELATION}?aid={aid}"))
+            .await?;
+        check_code(&value)?;
+        Ok(parse_archive_relation(&value))
     }
 
     pub async fn like(&self, aid: i64, unlike: bool) -> BiliResult<()> {
@@ -617,6 +628,24 @@ fn unix_ms() -> u128 {
         .as_millis()
 }
 
+fn parse_archive_relation(value: &Value) -> ArchiveRelation {
+    let data = &value["data"];
+    ArchiveRelation {
+        liked: value_truthy(&data["like"]),
+        disliked: value_truthy(&data["dislike"]),
+        coin_count: data["coin"]
+            .as_i64()
+            .unwrap_or_else(|| i64::from(value_truthy(&data["coin"]))),
+        faved: value_truthy(&data["favorite"]) || value_truthy(&data["fav"]),
+    }
+}
+
+fn value_truthy(value: &Value) -> bool {
+    value
+        .as_bool()
+        .unwrap_or_else(|| value.as_i64().unwrap_or(0) > 0)
+}
+
 fn parse_fav_folders(value: &Value) -> Vec<FavFolder> {
     value["data"]["list"]
         .as_array()
@@ -698,13 +727,13 @@ fn parse_dash(data: &Value) -> Vec<StreamChoice> {
     videos
 }
 
-fn pick_quality(choices: &[StreamChoice], quality: Option<i64>) -> &StreamChoice {
+fn pick_quality(choices: &[StreamChoice], quality: Option<i64>) -> Option<&StreamChoice> {
     if let Some(qn) = quality {
         if let Some(found) = choices.iter().find(|c| c.quality == qn) {
-            return found;
+            return Some(found);
         }
     }
-    choices.first().unwrap()
+    choices.first()
 }
 
 fn parse_card(value: &Value) -> Option<VideoCard> {
@@ -902,7 +931,10 @@ mod tests {
             "duration": 125,
             "stat": { "view": 88 }
         });
-        let card = parse_card(&item).unwrap();
+        let card = match parse_card(&item) {
+            Some(card) => card,
+            None => panic!("recommend fixture should parse"),
+        };
         assert_eq!(card.cover, "https://i0.hdslb.com/bfs/cover.png");
         assert_eq!(card.duration, 125);
         assert_eq!(card.views, 88);
@@ -956,6 +988,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_archive_relation_from_fixture() {
+        let value = json!({
+            "data": {
+                "like": true,
+                "dislike": false,
+                "coin": 1,
+                "favorite": true
+            }
+        });
+        let relation = parse_archive_relation(&value);
+        assert!(relation.liked);
+        assert!(!relation.disliked);
+        assert_eq!(relation.coin_count, 1);
+        assert!(relation.faved);
+    }
+
+    #[test]
     fn parse_comments_from_fixture() {
         let value = json!({
             "data": {
@@ -986,7 +1035,10 @@ mod tests {
             "author": "up",
             "pic": "https://i0.hdslb.com/a.jpg"
         });
-        let card = parse_search_card(&item).unwrap();
+        let card = match parse_search_card(&item) {
+            Some(card) => card,
+            None => panic!("search fixture should parse"),
+        };
         assert_eq!(card.title, "rust 入门");
         assert_eq!(card.duration, 62);
     }

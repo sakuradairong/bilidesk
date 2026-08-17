@@ -77,6 +77,14 @@ pub struct VideoDetail {
     pub reply: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArchiveRelation {
+    pub liked: bool,
+    pub disliked: bool,
+    pub coin_count: i64,
+    pub faved: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QualityOption {
     pub quality: i64,

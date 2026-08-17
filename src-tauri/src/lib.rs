@@ -24,6 +24,24 @@ pub fn run() {
             commands::init_data_dir(app.handle(), &state)?;
             Ok(())
         })
+        .on_window_event(|window, event| {
+            use tauri::WindowEvent;
+            if window.label() == "main"
+                && matches!(
+                    event,
+                    WindowEvent::Moved(_)
+                        | WindowEvent::Resized(_)
+                        | WindowEvent::Focused(_)
+                        | WindowEvent::ScaleFactorChanged { .. }
+                )
+            {
+                let state = window.app_handle().state::<AppState>();
+                let player = state.player.try_lock();
+                if let Ok(mut player) = player {
+                    let _ = player.sync_window();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::auth_qr_start,
             commands::auth_qr_poll,
@@ -34,6 +52,7 @@ pub fn run() {
             commands::feed_search,
             commands::video_view,
             commands::history_list,
+            commands::archive_relation,
             commands::archive_like,
             commands::archive_dislike,
             commands::archive_coin,

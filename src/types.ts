@@ -58,6 +58,13 @@ export type VideoDetail = {
   reply?: number;
 };
 
+export type ArchiveRelation = {
+  liked: boolean;
+  disliked: boolean;
+  coin_count: number;
+  faved: boolean;
+};
+
 export type QualityOption = {
   quality: number;
   desc: string;

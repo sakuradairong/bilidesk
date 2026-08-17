@@ -19,6 +19,13 @@ pub struct StageBounds {
     pub height: i32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PlayerPresentation {
+    #[default]
+    Embedded,
+    Backdrop,
+}
+
 impl StageBounds {
     fn is_usable(self) -> bool {
         self.width >= 16 && self.height >= 16
@@ -43,6 +50,7 @@ pub struct PlayerHost {
     running: Arc<AtomicBool>,
     bounds: StageBounds,
     embed: Option<isize>,
+    presentation: PlayerPresentation,
     window: Option<WebviewWindow>,
 }
 
@@ -54,6 +62,7 @@ impl Default for PlayerHost {
             running: Arc::new(AtomicBool::new(false)),
             bounds: StageBounds::default(),
             embed: None,
+            presentation: PlayerPresentation::Embedded,
             window: None,
         }
     }
@@ -68,10 +77,20 @@ impl Drop for PlayerHost {
 impl PlayerHost {
     pub fn set_bounds(&mut self, bounds: StageBounds) -> BiliResult<()> {
         self.bounds = bounds;
+        self.sync_window()
+    }
+
+    pub fn sync_window(&mut self) -> BiliResult<()> {
         #[cfg(windows)]
         if let (Some(window), Some(hwnd)) = (self.window.clone(), self.embed) {
-            on_window_thread(&window, hwnd, move || unsafe {
-                embed::move_host(hwnd, bounds)
+            let parent = window
+                .hwnd()
+                .map_err(|err| BiliError::msg(err.to_string()))?
+                .0 as isize;
+            let bounds = self.bounds;
+            let presentation = self.presentation;
+            on_window_thread(&window, hwnd, move || {
+                embed::move_host(parent, hwnd, bounds, presentation)
             })??;
         }
         Ok(())
@@ -84,6 +103,7 @@ impl PlayerHost {
         } else {
             // worker 仍可能在用 HWND，不能销毁。
             self.embed = None;
+            self.presentation = PlayerPresentation::Embedded;
             self.window = None;
         }
         Ok(())
@@ -108,7 +128,7 @@ impl PlayerHost {
     fn destroy_embed(&mut self) {
         #[cfg(windows)]
         if let (Some(window), Some(hwnd)) = (self.window.take(), self.embed.take()) {
-            let _ = on_window_thread(&window, hwnd, move || unsafe {
+            let _ = on_window_thread(&window, hwnd, move || {
                 embed::destroy_host(hwnd);
             });
         }
@@ -117,6 +137,7 @@ impl PlayerHost {
             self.embed = None;
             self.window = None;
         }
+        self.presentation = PlayerPresentation::Embedded;
     }
 
     pub fn command(&mut self, cmd: MpvCmd) -> BiliResult<()> {
@@ -154,8 +175,10 @@ impl PlayerHost {
         headers: &[String],
         ass_path: Option<&Path>,
         danmaku_on: bool,
+        presentation: PlayerPresentation,
     ) -> BiliResult<()> {
         self.stop()?;
+        self.presentation = presentation;
         self.window = Some(window.clone());
         let dll = find_libmpv().ok_or_else(|| {
             BiliError::msg(
@@ -223,9 +246,10 @@ impl PlayerHost {
         {
             let parent = window.hwnd().ok()?;
             let parent = parent.0 as isize;
+            let presentation = self.presentation;
             let window = window.clone();
-            let hwnd = on_window_thread(&window, parent, move || unsafe {
-                embed::create_host(parent, bounds)
+            let hwnd = on_window_thread(&window, parent, move || {
+                embed::create_host(parent, bounds, presentation)
             })
             .ok()?
             .ok()?;
@@ -247,7 +271,7 @@ where
 {
     #[cfg(windows)]
     {
-        if unsafe { embed::is_window_thread(hwnd) } {
+        if embed::is_window_thread(hwnd) {
             return Ok(f());
         }
         let (tx, rx) = mpsc::sync_channel(1);
@@ -372,18 +396,20 @@ pub fn write_ass(cid: i64, content: &str) -> BiliResult<PathBuf> {
 mod embed {
     use super::BiliError;
     use super::BiliResult;
+    use super::PlayerPresentation;
     use super::StageBounds;
     use std::sync::OnceLock;
     use windows::core::w;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+    use windows::Win32::Graphics::Gdi::{ClientToScreen, GetStockObject, BLACK_BRUSH, HBRUSH};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowThreadProcessId, RegisterClassExW,
-        SetWindowPos, CS_HREDRAW, CS_VREDRAW, HTTRANSPARENT, HWND_TOP, SWP_NOACTIVATE,
-        SWP_SHOWWINDOW, WM_NCHITTEST, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
-        WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, WS_VISIBLE,
+        CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, RegisterClassExW, SetWindowPos, CS_HREDRAW, CS_VREDRAW, HTTRANSPARENT,
+        HWND_TOP, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+        WM_NCHITTEST, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
     };
 
     const CLASS: windows::core::PCWSTR = w!("BiliDeskMpvHost");
@@ -398,15 +424,16 @@ mod embed {
         if msg == WM_NCHITTEST {
             return LRESULT(HTTRANSPARENT as isize);
         }
-        DefWindowProcW(hwnd, msg, wparam, lparam)
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 
-    unsafe fn register() -> BiliResult<u16> {
+    fn register() -> BiliResult<u16> {
         if let Some(atom) = CLASS_ONCE.get() {
             return Ok(*atom);
         }
-        let instance = GetModuleHandleW(None).map_err(|err| BiliError::msg(err.to_string()))?;
-        let brush = HBRUSH(GetStockObject(BLACK_BRUSH).0);
+        let instance =
+            unsafe { GetModuleHandleW(None) }.map_err(|err| BiliError::msg(err.to_string()))?;
+        let brush = HBRUSH(unsafe { GetStockObject(BLACK_BRUSH) }.0);
         let class = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             style: CS_HREDRAW | CS_VREDRAW,
@@ -416,7 +443,7 @@ mod embed {
             lpszClassName: CLASS,
             ..Default::default()
         };
-        let atom = RegisterClassExW(&class);
+        let atom = unsafe { RegisterClassExW(&class) };
         if atom == 0 {
             return Err(BiliError::msg("注册播放窗口类失败"));
         }
@@ -424,54 +451,121 @@ mod embed {
         Ok(atom)
     }
 
-    pub unsafe fn is_window_thread(hwnd: isize) -> bool {
+    pub fn is_window_thread(hwnd: isize) -> bool {
         let hwnd = HWND(hwnd as *mut std::ffi::c_void);
         let mut pid = 0u32;
-        let tid = GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        tid != 0 && tid == GetCurrentThreadId()
+        let tid = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        tid != 0 && tid == unsafe { GetCurrentThreadId() }
     }
 
-    pub unsafe fn create_host(parent: isize, bounds: StageBounds) -> BiliResult<isize> {
+    pub fn create_host(
+        parent: isize,
+        bounds: StageBounds,
+        presentation: PlayerPresentation,
+    ) -> BiliResult<isize> {
         let _ = register()?;
         let parent = HWND(parent as *mut std::ffi::c_void);
-        let hwnd = CreateWindowExW(
-            WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
-            CLASS,
-            w!(""),
-            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-            bounds.x,
-            bounds.y,
-            bounds.width.max(16),
-            bounds.height.max(16),
-            Some(parent),
-            None,
-            None,
-            None,
-        )
+        let (ex_style, style, host_parent) = match presentation {
+            PlayerPresentation::Embedded => (
+                WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+                WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                Some(parent),
+            ),
+            PlayerPresentation::Backdrop => (
+                WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                None,
+            ),
+        };
+        let hwnd = unsafe {
+            CreateWindowExW(
+                ex_style,
+                CLASS,
+                w!(""),
+                style,
+                bounds.x,
+                bounds.y,
+                bounds.width.max(16),
+                bounds.height.max(16),
+                host_parent,
+                None,
+                None,
+                None,
+            )
+        }
         .map_err(|err| BiliError::msg(format!("创建播放窗口失败: {err}")))?;
-        move_host(hwnd.0 as isize, bounds)?;
+        move_host(parent.0 as isize, hwnd.0 as isize, bounds, presentation)?;
         Ok(hwnd.0 as isize)
     }
 
-    pub unsafe fn move_host(hwnd: isize, bounds: StageBounds) -> BiliResult<()> {
+    pub fn move_host(
+        parent: isize,
+        hwnd: isize,
+        bounds: StageBounds,
+        presentation: PlayerPresentation,
+    ) -> BiliResult<()> {
+        let parent = HWND(parent as *mut std::ffi::c_void);
+        let hwnd = HWND(hwnd as *mut std::ffi::c_void);
+        if presentation == PlayerPresentation::Backdrop
+            && (unsafe { IsIconic(parent) }.as_bool()
+                || !unsafe { IsWindowVisible(parent) }.as_bool())
+        {
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+                )
+            }
+            .map_err(|err| BiliError::msg(format!("隐藏播放窗口失败: {err}")))?;
+            return Ok(());
+        }
         if !bounds.is_usable() {
             return Ok(());
         }
-        SetWindowPos(
-            HWND(hwnd as *mut std::ffi::c_void),
-            Some(HWND_TOP),
-            bounds.x,
-            bounds.y,
-            bounds.width.max(16),
-            bounds.height.max(16),
-            SWP_SHOWWINDOW | SWP_NOACTIVATE,
-        )
+        match presentation {
+            PlayerPresentation::Embedded => unsafe {
+                SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOP),
+                    bounds.x,
+                    bounds.y,
+                    bounds.width.max(16),
+                    bounds.height.max(16),
+                    SWP_SHOWWINDOW | SWP_NOACTIVATE,
+                )
+            },
+            PlayerPresentation::Backdrop => {
+                let mut origin = POINT {
+                    x: bounds.x,
+                    y: bounds.y,
+                };
+                if !unsafe { ClientToScreen(parent, &mut origin) }.as_bool() {
+                    return Err(BiliError::msg("无法换算播放窗口屏幕坐标"));
+                }
+                unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        Some(parent),
+                        origin.x,
+                        origin.y,
+                        bounds.width.max(16),
+                        bounds.height.max(16),
+                        SWP_SHOWWINDOW | SWP_NOACTIVATE,
+                    )
+                }
+            }
+        }
         .map_err(|err| BiliError::msg(format!("调整播放窗口失败: {err}")))?;
         Ok(())
     }
 
-    pub unsafe fn destroy_host(hwnd: isize) {
-        let _ = DestroyWindow(HWND(hwnd as *mut std::ffi::c_void));
+    pub fn destroy_host(hwnd: isize) {
+        let _ = unsafe { DestroyWindow(HWND(hwnd as *mut std::ffi::c_void)) };
     }
 }
 

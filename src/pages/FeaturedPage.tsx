@@ -5,15 +5,16 @@ import {
   archiveDislike,
   archiveFav,
   archiveLike,
+  archiveRelation,
   danmakuSend,
   feedSelected,
-  playerOpen,
+  playerOpenBackdrop,
   playerSeek,
   playerSetBounds,
   playerSetDanmaku,
   playerSetSpeed,
   playerSetVolume,
-  playerStop,
+  playerStopBackdrop,
   playerTogglePause,
   replyAdd,
   replyList,
@@ -21,7 +22,13 @@ import {
 } from "../api";
 import { formatDuration } from "../components/VideoCard";
 import { mediaSrc } from "../media";
-import type { CommentItem, PlaySession, PlayerProgress, VideoCard, VideoDetail } from "../types";
+import type {
+  CommentItem,
+  PlaySession,
+  PlayerProgress,
+  VideoCard,
+  VideoDetail,
+} from "../types";
 
 type Props = {
   onNeedLogin: () => void;
@@ -63,9 +70,9 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
   const aliveRef = useRef(true);
   const progressRef = useRef(progress);
   const speedRef = useRef(speed);
-  const playAtRef = useRef<(nextIndex: number, source?: VideoCard[]) => Promise<void>>(
-    async () => {},
-  );
+  const playAtRef = useRef<
+    (nextIndex: number, source?: VideoCard[]) => Promise<void>
+  >(async () => {});
 
   progressRef.current = progress;
   speedRef.current = speed;
@@ -78,7 +85,7 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
     return () => {
       aliveRef.current = false;
       document.documentElement.classList.remove("featured-mode");
-      void playerStop();
+      void playerStopBackdrop();
     };
   }, []);
 
@@ -90,12 +97,11 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
         void playerSetBounds({ x: -2400, y: 0, width: 16, height: 16 });
         return;
       }
-      const rect = el.getBoundingClientRect();
       void playerSetBounds({
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
+        x: 0,
+        y: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
     };
     publish();
@@ -107,6 +113,29 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
       window.removeEventListener("resize", publish);
     };
   }, [loginOpen, commentsOpen]);
+
+  useEffect(() => {
+    const aid = detail?.aid;
+    if (loginOpen || !aid) return;
+    let cancelled = false;
+    void archiveRelation(aid)
+      .then((relation) => {
+        if (cancelled || !aliveRef.current) return;
+        setLiked(relation.liked);
+        setDisliked(relation.disliked);
+        setCoined(relation.coin_count > 0);
+        setFaved(relation.faved);
+      })
+      .catch((err) => {
+        const message = asError(err);
+        if (!cancelled && !message.includes("未登录")) {
+          setError(message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.aid, loginOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,26 +231,24 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
       if (!card) return;
       indexRef.current = nextIndex;
       setIndex(nextIndex);
+      setDetail(null);
       setLiked(false);
       setCoined(false);
       setFaved(false);
       setDisliked(false);
       setCommentsOpen(false);
       setError("");
-      const nextSession = await playerOpen(card.bvid, card.cid ?? undefined);
-      if (!aliveRef.current) {
-        void playerStop();
-        return;
-      }
+      const nextSession = await playerOpenBackdrop(
+        card.bvid,
+        card.cid ?? undefined,
+      );
+      if (!aliveRef.current) return;
       setSession(nextSession);
+      await playerSetSpeed(speedRef.current);
       const nextDetail = await videoView(card.bvid);
-      if (!aliveRef.current) {
-        void playerStop();
-        return;
-      }
+      if (!aliveRef.current) return;
       setDetail(nextDetail);
       setCommentCount(nextDetail.reply ?? 0);
-      await playerSetSpeed(speedRef.current);
     } catch (err) {
       if (aliveRef.current) setError(asError(err));
     } finally {
@@ -317,7 +344,9 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
     try {
       await archiveCoin(aid);
       setCoined(true);
-      setDetail((prev) => (prev ? { ...prev, coin: (prev.coin ?? 0) + 1 } : prev));
+      setDetail((prev) =>
+        prev ? { ...prev, coin: (prev.coin ?? 0) + 1 } : prev,
+      );
     } catch (err) {
       handleInteractError(err);
     }
@@ -341,7 +370,9 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
     const bvid = session?.bvid ?? items[index]?.bvid;
     if (!bvid) return;
     try {
-      await navigator.clipboard.writeText(`https://www.bilibili.com/video/${bvid}`);
+      await navigator.clipboard.writeText(
+        `https://www.bilibili.com/video/${bvid}`,
+      );
       setError("链接已复制");
     } catch (err) {
       handleInteractError(err);
@@ -355,7 +386,13 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
     const cid = session?.cid ?? card?.cid;
     if (!text || !aid || !cid || !card) return;
     try {
-      await danmakuSend(aid, cid, card.bvid, text, Math.floor(progressRef.current.time * 1000));
+      await danmakuSend(
+        aid,
+        cid,
+        card.bvid,
+        text,
+        Math.floor(progressRef.current.time * 1000),
+      );
       setDanmakuText("");
     } catch (err) {
       handleInteractError(err);
@@ -394,11 +431,8 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
     if (!session) return;
     const time = progress.time;
     try {
-      const next = await playerOpen(session.bvid, session.cid, quality);
-      if (!aliveRef.current) {
-        void playerStop();
-        return;
-      }
+      const next = await playerOpenBackdrop(session.bvid, session.cid, quality);
+      if (!aliveRef.current) return;
       setSession(next);
       if (time > 1) await playerSeek(time);
     } catch (err) {
@@ -432,36 +466,75 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
   const season = detail?.season_title ?? "";
 
   return (
-    <div className={`featured-page${commentsOpen ? " comments-open" : ""}`}>
-      <div className="featured-stage" ref={stageRef} onClick={() => void playerTogglePause()} />
+    <div
+      className={`featured-page${session ? " is-playing" : ""}${commentsOpen ? " comments-open" : ""}`}
+    >
+      <div
+        className="featured-stage"
+        ref={stageRef}
+        onClick={() => void playerTogglePause()}
+      />
       <div className="featured-rail">
-        <button
-          className="featured-chevron"
-          disabled={index <= 0}
-          onClick={() => void playAt(indexRef.current - 1)}
-        >
-          上一条
-        </button>
-        <button className="featured-chevron" onClick={() => void playAt(indexRef.current + 1)}>
-          下一条
-        </button>
-        <ActionButton label="赞" active={liked} count={detail?.like ?? 0} onClick={() => void toggleLike()} />
-        <ActionButton label="不喜欢" active={disliked} onClick={() => void toggleDislike()} />
-        <ActionButton label="币" active={coined} count={detail?.coin ?? 0} onClick={() => void addCoin()} />
-        <ActionButton label="藏" active={faved} count={detail?.favorite ?? 0} onClick={() => void addFav()} />
-        <ActionButton label="转" count={detail?.share ?? 0} onClick={() => void share()} />
-        <ActionButton
-          label="评"
-          active={commentsOpen}
-          count={commentCount}
-          onClick={() => void openComments()}
-        />
+        <div className="featured-navigation">
+          <button
+            className="featured-chevron"
+            disabled={index <= 0}
+            onClick={() => void playAt(indexRef.current - 1)}
+          >
+            上一条
+          </button>
+          <button
+            className="featured-chevron"
+            onClick={() => void playAt(indexRef.current + 1)}
+          >
+            下一条
+          </button>
+        </div>
+        <div className="featured-actions">
+          <ActionButton
+            label="赞"
+            active={liked}
+            count={detail?.like ?? 0}
+            onClick={() => void toggleLike()}
+          />
+          <ActionButton
+            label="不喜欢"
+            active={disliked}
+            onClick={() => void toggleDislike()}
+          />
+          <ActionButton
+            label="币"
+            active={coined}
+            count={detail?.coin ?? 0}
+            onClick={() => void addCoin()}
+          />
+          <ActionButton
+            label="藏"
+            active={faved}
+            count={detail?.favorite ?? 0}
+            onClick={() => void addFav()}
+          />
+          <ActionButton
+            label="转"
+            count={detail?.share ?? 0}
+            onClick={() => void share()}
+          />
+          <ActionButton
+            label="评"
+            active={commentsOpen}
+            count={commentCount}
+            onClick={() => void openComments()}
+          />
+        </div>
       </div>
       {commentsOpen ? (
         <aside className="featured-comments">
           <header>
             <strong>评论 {commentCount}</strong>
-            <button className="ghost-btn" onClick={() => setCommentsOpen(false)}>
+            <button
+              className="ghost-btn"
+              onClick={() => setCommentsOpen(false)}
+            >
               关闭
             </button>
           </header>
@@ -510,11 +583,15 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
           </div>
         </div>
         <div className="featured-bar">
-          <button className="ghost-btn" onClick={() => void playerTogglePause()}>
+          <button
+            className="ghost-btn"
+            onClick={() => void playerTogglePause()}
+          >
             {progress.paused ? "播放" : "暂停"}
           </button>
           <span className="time-label">
-            {formatDuration(progress.time)} / {formatDuration(progress.duration)}
+            {formatDuration(progress.time)} /{" "}
+            {formatDuration(progress.duration)}
           </span>
           <input
             className="progress"
@@ -543,7 +620,10 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
               </option>
             ))}
           </select>
-          <select value={String(speed)} onChange={(e) => void changeSpeed(Number(e.target.value))}>
+          <select
+            value={String(speed)}
+            onChange={(e) => void changeSpeed(Number(e.target.value))}
+          >
             {SPEEDS.map((item) => (
               <option key={item} value={item}>
                 {item}x
@@ -584,9 +664,12 @@ function ActionButton({
   onClick: () => void;
 }) {
   return (
-    <button className={`featured-action ${active ? "active" : ""}`} onClick={onClick}>
+    <button
+      className={`featured-action ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
       <span>{label}</span>
-      {count != null ? <em>{compactCount(count)}</em> : null}
+      {count == null ? null : <em>{compactCount(count)}</em>}
     </button>
   );
 }
