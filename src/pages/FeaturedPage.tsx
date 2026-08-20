@@ -19,25 +19,23 @@ import {
   replyAdd,
   replyList,
   videoView,
-} from "../api";
-import { formatDuration } from "../components/VideoCard";
-import { mediaSrc } from "../media";
+} from "@/api";
+import { formatDuration } from "@/components/VideoCard";
+import { mediaSrc } from "@/media";
 import type {
   CommentItem,
   PlaySession,
   PlayerProgress,
   VideoCard,
   VideoDetail,
-} from "../types";
-
-type Props = {
-  onNeedLogin: () => void;
-  loginOpen?: boolean;
-};
+} from "@/types";
+import { useAuthStore } from "@/stores/auth";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 
-export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
+export function FeaturedPage() {
+  const loginOpen = useAuthStore((s) => s.loginOpen);
+  const onNeedLogin = () => useAuthStore.getState().setLoginOpen(true);
   const [items, setItems] = useState<VideoCard[]>([]);
   const [index, setIndex] = useState(0);
   const [session, setSession] = useState<PlaySession | null>(null);
@@ -184,9 +182,23 @@ export function FeaturedPage({ onNeedLogin, loginOpen = false }: Props) {
       } else if (event.code === "ArrowUp") {
         event.preventDefault();
         void playAtRef.current(indexRef.current - 1);
-      } else if (event.code === "ArrowDown") {
+      } else if (event.code === "ArrowDown" || event.code === "KeyF") {
         event.preventDefault();
         void playAtRef.current(indexRef.current + 1);
+      } else if (event.code === "ArrowLeft") {
+        event.preventDefault();
+        void playerSeek(Math.max(progressRef.current.time - 5, 0));
+      } else if (event.code === "ArrowRight") {
+        event.preventDefault();
+        void playerSeek(progressRef.current.time + 5);
+      } else if (event.code === "Equal" || event.code === "NumpadAdd") {
+        event.preventDefault();
+        void playerSetVolume(Math.min(progressRef.current.volume + 5, 130));
+      } else if (event.code === "Minus" || event.code === "NumpadSubtract") {
+        event.preventDefault();
+        void playerSetVolume(Math.max(progressRef.current.volume - 5, 0));
+      } else if (event.code === "Escape") {
+        setCommentsOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);

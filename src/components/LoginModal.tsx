@@ -1,79 +1,88 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { authQrPoll, authQrStart } from "../api";
-import type { Profile } from "../types";
+import { authQrPoll, authQrStart, toAppError } from "@/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { Profile } from "@/types";
 
 type Props = {
+  open: boolean;
   onClose: () => void;
   onLoggedIn: (profile: Profile) => void;
 };
 
-export function LoginModal({ onClose, onLoggedIn }: Props) {
+export function LoginModal({ open, onClose, onLoggedIn }: Props) {
   const [url, setUrl] = useState("");
-  const [message, setMessage] = useState("请使用哔哩哔哩手机 App 扫码");
+  const [key, setKey] = useState("");
+  const [status, setStatus] = useState("准备二维码…");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!open) return;
     let cancelled = false;
-    let timer = 0;
-    let qrcodeKey = "";
-
-    async function start() {
+    let timer: number | undefined;
+    (async () => {
       try {
-        const qr = await authQrStart();
+        const start = await authQrStart();
         if (cancelled) return;
-        qrcodeKey = qr.qrcode_key;
-        setUrl(qr.url);
-        timer = window.setInterval(poll, 1400);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }
-
-    async function poll() {
-      try {
-        const result = await authQrPoll(qrcodeKey);
-        if (result.status === "scanned") {
-          setMessage("已扫码，请在手机上确认");
-        } else if (result.status === "confirmed") {
-          window.clearInterval(timer);
-          if (result.profile) {
-            onLoggedIn(result.profile);
+        setUrl(start.url);
+        setKey(start.qrcode_key);
+        setStatus("请使用哔哩哔哩 App 扫码");
+        setError("");
+        timer = window.setInterval(async () => {
+          try {
+            const poll = await authQrPoll(start.qrcode_key);
+            if (cancelled) return;
+            if (poll.status === "scanned") setStatus("已扫描，请在手机上确认");
+            if (poll.status === "confirmed" && poll.profile) {
+              onLoggedIn(poll.profile);
+              onClose();
+            }
+            if (poll.status === "expired") {
+              setStatus("二维码已过期，请关闭后重试");
+              window.clearInterval(timer);
+            }
+          } catch (err) {
+            setError(toAppError(err).message);
           }
-          onClose();
-        } else if (result.status === "expired") {
-          window.clearInterval(timer);
-          setMessage("二维码已过期，请关闭后重试");
-        }
+        }, 1500);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(toAppError(err).message);
       }
-    }
-
-    start();
+    })();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer) window.clearInterval(timer);
     };
-  }, [onClose, onLoggedIn]);
+  }, [open, onClose, onLoggedIn]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
-        <h2>扫码登录</h2>
-        <p className="status-line">{message}</p>
-        {url ? (
-          <div className="qr">
-            <QRCodeSVG value={url} size={196} />
-          </div>
-        ) : (
-          <p>正在生成二维码…</p>
-        )}
-        {error ? <p className="error-line">{error}</p> : null}
-        <button className="ghost-btn" onClick={onClose}>
-          取消
-        </button>
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>扫码登录</DialogTitle>
+          <DialogDescription>使用网页端登录态，不冒充官方客户端。</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-3 py-2">
+          {url ? (
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              <QRCodeSVG value={url} size={180} />
+            </div>
+          ) : (
+            <div className="flex size-[180px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
+              加载中…
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">{status}</p>
+          {key ? <p className="text-[11px] text-muted-foreground/70">key: {key.slice(0, 8)}…</p> : null}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

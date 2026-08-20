@@ -1,5 +1,7 @@
+mod app_error;
 mod bili;
 mod commands;
+mod storage;
 mod mpv;
 mod player;
 
@@ -69,6 +71,8 @@ pub fn run() {
             commands::player_set_danmaku,
             commands::player_set_danmaku_prefs,
             commands::player_set_bounds,
+            commands::settings_get_all,
+            commands::settings_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running BiliDesk");

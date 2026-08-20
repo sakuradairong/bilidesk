@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   playerOpen,
   playerSeek,
@@ -9,27 +10,33 @@ import {
   playerSetVolume,
   playerStop,
   playerTogglePause,
-} from "../api";
-import { formatDuration } from "../components/VideoCard";
-import type { PlaySession, PlayerProgress } from "../types";
+  toAppError,
+} from "@/api";
+import { formatDuration } from "@/components/VideoCard";
+import { Button } from "@/components/ui/button";
+import type { PlaySession, PlayerProgress } from "@/types";
+import { useSettingsStore } from "@/stores/settings";
 
-type Props = {
-  bvid: string;
-  onBack: () => void;
-};
-
-export function PlayerPage({ bvid, onBack }: Props) {
+export function PlayerPage() {
+  const { bvid = "" } = useParams();
+  const navigate = useNavigate();
+  const defaultVolume = useSettingsStore((s) => s.defaultVolume);
+  const danmakuEnabled = useSettingsStore((s) => s.danmakuEnabled);
   const [session, setSession] = useState<PlaySession | null>(null);
   const [progress, setProgress] = useState<PlayerProgress>({
     time: 0,
     duration: 0,
     paused: false,
-    volume: 80,
+    volume: defaultVolume,
   });
-  const [danmaku, setDanmaku] = useState(true);
+  const [danmaku, setDanmaku] = useState(danmakuEnabled);
   const [error, setError] = useState("");
-  const [density, setDensity] = useState("12");
+  const [density, setDensity] = useState(String(useSettingsStore.getState().danmakuMaxRows));
   const stageRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
+
+  const onBack = () => navigate(-1);
 
   useEffect(() => {
     document.documentElement.classList.add("player-mode");
@@ -83,31 +90,42 @@ export function PlayerPage({ bvid, onBack }: Props) {
         event.preventDefault();
         void playerTogglePause();
       } else if (event.code === "ArrowRight") {
-        void playerSeek(progress.time + 5);
+        void playerSeek(progressRef.current.time + 5);
       } else if (event.code === "ArrowLeft") {
-        void playerSeek(Math.max(progress.time - 5, 0));
+        void playerSeek(Math.max(progressRef.current.time - 5, 0));
+      } else if (event.code === "ArrowUp") {
+        event.preventDefault();
+        void playerSetVolume(Math.min(progressRef.current.volume + 5, 130));
+      } else if (event.code === "ArrowDown") {
+        event.preventDefault();
+        void playerSetVolume(Math.max(progressRef.current.volume - 5, 0));
       } else if (event.code === "Escape") {
         onBack();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack, progress.time]);
+  }, []);
 
   useEffect(() => {
+    if (!bvid) return;
     let cancelled = false;
     playerOpen(bvid)
-      .then((next) => {
-        if (!cancelled) setSession(next);
+      .then(async (next) => {
+        if (cancelled) return;
+        setSession(next);
+        await playerSetVolume(defaultVolume);
+        await playerSetDanmaku(danmakuEnabled);
+        setDanmaku(danmakuEnabled);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(toAppError(err).message);
       });
     return () => {
       cancelled = true;
       void playerStop();
     };
-  }, [bvid]);
+  }, [bvid, defaultVolume, danmakuEnabled]);
 
   const qualityOptions = useMemo(() => session?.qualities ?? [], [session]);
 
@@ -117,7 +135,7 @@ export function PlayerPage({ bvid, onBack }: Props) {
       setError("");
       setSession(await playerOpen(session.bvid, cid, session.current_quality));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err).message);
     }
   }
 
@@ -126,11 +144,9 @@ export function PlayerPage({ bvid, onBack }: Props) {
     try {
       const time = progress.time;
       setSession(await playerOpen(session.bvid, session.cid, quality));
-      if (time > 1) {
-        await playerSeek(time);
-      }
+      if (time > 1) await playerSeek(time);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err).message);
     }
   }
 
@@ -140,20 +156,20 @@ export function PlayerPage({ bvid, onBack }: Props) {
     try {
       await playerSetDanmaku(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err).message);
     }
   }
 
   return (
     <div className="player-page">
       <header>
-        <button className="ghost-btn" onClick={onBack}>
+        <Button variant="ghost" className="text-inherit" onClick={onBack}>
           返回
-        </button>
+        </Button>
         <div className="player-title">{session?.title ?? "正在打开…"}</div>
       </header>
       <div className="player-stage" ref={stageRef} onClick={() => void playerTogglePause()} />
-      {error ? <p className="error-line" style={{ padding: "0 16px" }}>{error}</p> : null}
+      {error ? <p className="error-line" style={{ padding: "0 16px", margin: 0, background: "#101216", color: "#ff8f8f" }}>{error}</p> : null}
       <footer>
         <button className="ghost-btn" onClick={() => void playerTogglePause()}>
           {progress.paused ? "播放" : "暂停"}
@@ -178,10 +194,7 @@ export function PlayerPage({ bvid, onBack }: Props) {
           onChange={(e) => void playerSetVolume(Number(e.target.value))}
           title="音量"
         />
-        <select
-          value={session?.cid ?? ""}
-          onChange={(e) => void changePage(Number(e.target.value))}
-        >
+        <select value={session?.cid ?? ""} onChange={(e) => void changePage(Number(e.target.value))}>
           {(session?.pages ?? []).map((page) => (
             <option key={page.cid} value={page.cid}>
               P{page.page} {page.part}

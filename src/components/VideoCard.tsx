@@ -1,47 +1,53 @@
-import { mediaSrc } from "../media";
-import type { VideoCard } from "../types";
+import { mediaSrc } from "@/media";
+import type { VideoCard as VideoCardType } from "@/types";
+
+export function formatDuration(seconds: number): string {
+  if (!seconds || seconds < 0) return "";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+export function formatViews(views: number): string {
+  if (!views) return "";
+  if (views >= 10000) return `${(views / 10000).toFixed(1)}万`;
+  return String(views);
+}
 
 type Props = {
-  card: VideoCard;
+  item: VideoCardType;
   onOpen: (bvid: string) => void;
 };
 
-export function VideoCardView({ card, onOpen }: Props) {
+export function VideoCard({ item, onOpen }: Props) {
   return (
-    <button className="card" onClick={() => onOpen(card.bvid)}>
-      <div className="cover">
-        {card.cover ? (
+    <button
+      type="button"
+      className="group flex flex-col gap-2 text-left transition-transform duration-200 hover:-translate-y-0.5"
+      onClick={() => onOpen(item.bvid)}
+    >
+      <div className="relative aspect-video overflow-hidden rounded-lg bg-muted shadow-sm ring-1 ring-border/60">
+        {item.cover ? (
           <img
-            src={mediaSrc(card.cover)}
+            src={mediaSrc(item.cover)}
             alt=""
-            onLoad={(event) => event.currentTarget.classList.add("ready")}
-            onError={(event) => event.currentTarget.remove()}
+            className="size-full object-cover transition duration-300 group-hover:scale-[1.03]"
+            loading="lazy"
           />
         ) : null}
-        <span className="duration">{formatDuration(card.duration)}</span>
+        {item.duration > 0 ? (
+          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
+            {formatDuration(item.duration)}
+          </span>
+        ) : null}
       </div>
-      <div className="card-body">
-        <h3>{card.title}</h3>
-        <div className="meta">
-          {card.owner} · {formatViews(card.views)}
+      <div className="flex flex-col gap-0.5 px-0.5">
+        <div className="line-clamp-2 text-sm font-medium leading-snug">{item.title}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {item.owner}
+          {item.views > 0 ? ` · ${formatViews(item.views)}播放` : ""}
         </div>
       </div>
     </button>
   );
-}
-
-export function formatDuration(total: number): string {
-  if (!total || total < 0) return "00:00";
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = Math.floor(total % 60);
-  const body = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  return hours > 0 ? `${hours}:${body}` : body;
-}
-
-export function formatViews(views: number): string {
-  if (views >= 10000) {
-    return `${(views / 10000).toFixed(1)}万播放`;
-  }
-  return `${views || 0}播放`;
 }

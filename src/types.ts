@@ -109,4 +109,4 @@ export type CommentPage = {
   all_count: number;
 };
 
-export type PageId = "home" | "featured" | "search" | "history";
+export type ThemeMode = "light" | "dark" | "system";

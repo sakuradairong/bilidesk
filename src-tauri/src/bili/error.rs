@@ -20,6 +20,20 @@ impl BiliError {
     pub fn msg(text: impl Into<String>) -> Self {
         Self::Message(text.into())
     }
+
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Message(text) if text.contains("未登录") => "unauthenticated",
+            Self::Message(text) if text.contains("风控") => "risk_control",
+            Self::Message(text) if text.contains("大会员") => "vip_required",
+            Self::Message(_) => "message",
+            Self::Network(_) => "network",
+            Self::Api(_) => "api",
+            Self::NoPlayUrl => "no_play_url",
+            Self::Io(_) => "io",
+            Self::Json(_) => "json",
+        }
+    }
 }
 
 impl From<reqwest::Error> for BiliError {
