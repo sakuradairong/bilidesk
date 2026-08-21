@@ -2,10 +2,14 @@ import { mediaSrc } from "@/media";
 import type { VideoCard as VideoCardType } from "@/types";
 
 export function formatDuration(seconds: number): string {
-  if (!seconds || seconds < 0) return "";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = m.toString().padStart(2, "0");
+  const ss = s.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 export function formatViews(views: number): string {
@@ -33,6 +37,7 @@ export function VideoCard({ item, onOpen }: Props) {
             alt=""
             className="size-full object-cover transition duration-300 group-hover:scale-[1.03]"
             loading="lazy"
+            onError={(event) => event.currentTarget.remove()}
           />
         ) : null}
         {item.duration > 0 ? (

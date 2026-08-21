@@ -23,16 +23,25 @@ impl BiliError {
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Message(text) if text.contains("未登录") => "unauthenticated",
-            Self::Message(text) if text.contains("风控") => "risk_control",
-            Self::Message(text) if text.contains("大会员") => "vip_required",
-            Self::Message(_) => "message",
+            Self::Message(text) => classify_message(text, "message"),
+            Self::Api(text) => classify_message(text, "api"),
             Self::Network(_) => "network",
-            Self::Api(_) => "api",
             Self::NoPlayUrl => "no_play_url",
             Self::Io(_) => "io",
             Self::Json(_) => "json",
         }
+    }
+}
+
+fn classify_message(text: &str, fallback: &'static str) -> &'static str {
+    if text.contains("未登录") {
+        "unauthenticated"
+    } else if text.contains("风控") {
+        "risk_control"
+    } else if text.contains("大会员") {
+        "vip_required"
+    } else {
+        fallback
     }
 }
 
@@ -56,3 +65,14 @@ impl Serialize for BiliError {
 }
 
 pub type BiliResult<T> = Result<T, BiliError>;
+
+#[cfg(test)]
+mod tests {
+    use super::BiliError;
+
+    #[test]
+    fn api_unauthenticated_uses_stable_code() {
+        assert_eq!(BiliError::Api("未登录".into()).code(), "unauthenticated");
+        assert_eq!(BiliError::msg("请求被风控").code(), "risk_control");
+    }
+}

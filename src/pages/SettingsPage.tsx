@@ -55,12 +55,12 @@ export function SettingsPage() {
           />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <Label>默认字号</Label>
+          <Label htmlFor="dm-font">默认字号</Label>
           <Select
             value={String(danmakuFontSize)}
             onValueChange={(v) => void setKey("danmaku_font_size", v)}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="dm-font" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -71,12 +71,12 @@ export function SettingsPage() {
           </Select>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <Label>默认密度</Label>
+          <Label htmlFor="dm-rows">默认密度</Label>
           <Select
             value={String(danmakuMaxRows)}
             onValueChange={(v) => void setKey("danmaku_max_rows", v)}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="dm-rows" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -91,12 +91,12 @@ export function SettingsPage() {
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
         <h2 className="text-sm font-semibold">播放</h2>
         <div className="flex items-center justify-between gap-4">
-          <Label>默认音量</Label>
+          <Label htmlFor="vol">默认音量</Label>
           <Select
             value={String(defaultVolume)}
             onValueChange={(v) => void setKey("default_volume", v)}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="vol" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -107,12 +107,12 @@ export function SettingsPage() {
           </Select>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <Label>默认倍速</Label>
+          <Label htmlFor="speed">默认倍速</Label>
           <Select
             value={String(defaultSpeed)}
             onValueChange={(v) => void setKey("default_speed", v)}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="speed" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

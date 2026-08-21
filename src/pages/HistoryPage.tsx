@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { historyList, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
+import { openWatch } from "@/lib/watch";
 import type { HistoryItem, VideoCard } from "@/types";
 
 export function HistoryPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [items, setItems] = useState<VideoCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -46,7 +48,7 @@ export function HistoryPage() {
         items={items}
         loading={loading}
         error={error}
-        onOpen={(bvid) => navigate(`/watch/${bvid}`)}
+        onOpen={(bvid) => openWatch(navigate, bvid, `${location.pathname}${location.search}`)}
         onRetry={() => void load()}
         emptyTitle="还没有观看记录"
         emptyDescription="打开任意视频后会出现在这里"

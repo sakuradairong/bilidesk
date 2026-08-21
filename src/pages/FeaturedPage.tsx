@@ -19,6 +19,7 @@ import {
   replyAdd,
   replyList,
   videoView,
+  toAppError,
 } from "@/api";
 import { formatDuration } from "@/components/VideoCard";
 import { mediaSrc } from "@/media";
@@ -30,12 +31,17 @@ import type {
   VideoDetail,
 } from "@/types";
 import { useAuthStore } from "@/stores/auth";
+import { useSettingsStore } from "@/stores/settings";
+import { isHotkeyIgnored } from "@/lib/hotkeys";
+import { useNavigate } from "react-router-dom";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 
 export function FeaturedPage() {
+  const navigate = useNavigate();
   const loginOpen = useAuthStore((s) => s.loginOpen);
   const onNeedLogin = () => useAuthStore.getState().setLoginOpen(true);
+  const defaults = useSettingsStore.getState();
   const [items, setItems] = useState<VideoCard[]>([]);
   const [index, setIndex] = useState(0);
   const [session, setSession] = useState<PlaySession | null>(null);
@@ -44,12 +50,12 @@ export function FeaturedPage() {
     time: 0,
     duration: 0,
     paused: false,
-    volume: 80,
+    volume: defaults.defaultVolume,
   });
   const [error, setError] = useState("");
-  const [danmaku, setDanmaku] = useState(true);
+  const [danmaku, setDanmaku] = useState(defaults.danmakuEnabled);
   const [danmakuText, setDanmakuText] = useState("");
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(defaults.defaultSpeed);
   const [liked, setLiked] = useState(false);
   const [coined, setCoined] = useState(false);
   const [faved, setFaved] = useState(false);
@@ -68,12 +74,16 @@ export function FeaturedPage() {
   const aliveRef = useRef(true);
   const progressRef = useRef(progress);
   const speedRef = useRef(speed);
+  const danmakuRef = useRef(danmaku);
+  const commentsOpenRef = useRef(false);
   const playAtRef = useRef<
     (nextIndex: number, source?: VideoCard[]) => Promise<void>
   >(async () => {});
 
   progressRef.current = progress;
   speedRef.current = speed;
+  danmakuRef.current = danmaku;
+  commentsOpenRef.current = commentsOpen;
   itemsRef.current = items;
   indexRef.current = index;
 
@@ -125,9 +135,9 @@ export function FeaturedPage() {
         setFaved(relation.faved);
       })
       .catch((err) => {
-        const message = asError(err);
-        if (!cancelled && !message.includes("未登录")) {
-          setError(message);
+        const error = toAppError(err);
+        if (!cancelled && error.code !== "unauthenticated") {
+          setError(error.message);
         }
       });
     return () => {
@@ -172,10 +182,8 @@ export function FeaturedPage() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
-        return;
-      }
+      if (useAuthStore.getState().loginOpen) return;
+      if (isHotkeyIgnored(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
         void playerTogglePause();
@@ -198,7 +206,8 @@ export function FeaturedPage() {
         event.preventDefault();
         void playerSetVolume(Math.max(progressRef.current.volume - 5, 0));
       } else if (event.code === "Escape") {
-        setCommentsOpen(false);
+        if (commentsOpenRef.current) setCommentsOpen(false);
+        else navigate("/");
       }
     }
     window.addEventListener("keydown", onKey);
@@ -221,7 +230,7 @@ export function FeaturedPage() {
         }
         await playAtRef.current(0, feed);
       } catch (err) {
-        if (!cancelled) setError(asError(err));
+        if (!cancelled) setError(toAppError(err).message);
       }
     })();
     return () => {
@@ -257,12 +266,13 @@ export function FeaturedPage() {
       if (!aliveRef.current) return;
       setSession(nextSession);
       await playerSetSpeed(speedRef.current);
+      await playerSetDanmaku(danmakuRef.current);
       const nextDetail = await videoView(card.bvid);
       if (!aliveRef.current) return;
       setDetail(nextDetail);
       setCommentCount(nextDetail.reply ?? 0);
     } catch (err) {
-      if (aliveRef.current) setError(asError(err));
+      if (aliveRef.current) setError(toAppError(err).message);
     } finally {
       openingRef.current = false;
       const pending = pendingIndexRef.current;
@@ -305,7 +315,7 @@ export function FeaturedPage() {
       try {
         grew = await promise;
       } catch (err) {
-        if (aliveRef.current) setError(asError(err));
+        if (aliveRef.current) setError(toAppError(err).message);
         return;
       } finally {
         if (loadMorePromiseRef.current === promise) {
@@ -317,9 +327,9 @@ export function FeaturedPage() {
   }
 
   function handleInteractError(err: unknown) {
-    const message = asError(err);
-    setError(message);
-    if (message.includes("未登录")) onNeedLogin();
+    const error = toAppError(err);
+    setError(error.message);
+    if (error.code === "unauthenticated") onNeedLogin();
   }
 
   async function toggleLike() {
@@ -448,7 +458,7 @@ export function FeaturedPage() {
       setSession(next);
       if (time > 1) await playerSeek(time);
     } catch (err) {
-      setError(asError(err));
+      setError(toAppError(err).message);
     }
   }
 
@@ -458,7 +468,7 @@ export function FeaturedPage() {
     try {
       await playerSetDanmaku(next);
     } catch (err) {
-      setError(asError(err));
+      setError(toAppError(err).message);
     }
   }
 
@@ -467,7 +477,7 @@ export function FeaturedPage() {
     try {
       await playerSetSpeed(next);
     } catch (err) {
-      setError(asError(err));
+      setError(toAppError(err).message);
     }
   }
 
@@ -648,6 +658,7 @@ export function FeaturedPage() {
           <input
             className="featured-dm"
             value={danmakuText}
+            aria-label="发弹幕"
             placeholder="发条弹幕"
             onChange={(e) => setDanmakuText(e.target.value)}
             onKeyDown={(e) => {
@@ -677,7 +688,9 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       className={`featured-action ${active ? "active" : ""}`}
+      aria-pressed={!!active}
       onClick={onClick}
     >
       <span>{label}</span>
@@ -691,8 +704,4 @@ function compactCount(n: number): string {
     return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`;
   }
   return String(n);
-}
-
-function asError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

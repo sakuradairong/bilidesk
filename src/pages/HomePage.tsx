@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { feedRecommend, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
+import { openWatch } from "@/lib/watch";
 import type { VideoCard } from "@/types";
 
 export function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [items, setItems] = useState<VideoCard[]>([]);
   const [idx, setIdx] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -16,7 +18,11 @@ export function HomePage() {
     setError("");
     try {
       const next = await feedRecommend(freshIdx);
-      setItems((prev) => (append ? [...prev, ...next] : next));
+      setItems((prev) => {
+        if (!append) return next;
+        const seen = new Set(prev.map((item) => item.bvid));
+        return [...prev, ...next.filter((item) => item.bvid && !seen.has(item.bvid))];
+      });
       setIdx(freshIdx);
     } catch (err) {
       setError(toAppError(err).message);
@@ -39,9 +45,9 @@ export function HomePage() {
         items={items}
         loading={loading}
         error={error}
-        onOpen={(bvid) => navigate(`/watch/${bvid}`)}
+        onOpen={(bvid) => openWatch(navigate, bvid, `${location.pathname}${location.search}`)}
         onMore={() => void load(idx + 1, true)}
-        onRetry={() => void load(1)}
+        onRetry={() => void (items.length ? load(idx + 1, true) : load(1))}
         emptyTitle="还没有推荐"
         emptyDescription="稍后再试，或先登录后再刷新"
       />

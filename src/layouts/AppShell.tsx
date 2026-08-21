@@ -1,6 +1,6 @@
+import { FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Compass, History, Settings, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
 import { LoginModal } from "@/components/LoginModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,6 @@ export function AppShell() {
   const profile = useAuthStore((s) => s.profile);
   const loginOpen = useAuthStore((s) => s.loginOpen);
   const setLoginOpen = useAuthStore((s) => s.setLoginOpen);
-  const setProfile = useAuthStore((s) => s.setProfile);
   const logout = useAuthStore((s) => s.logout);
   const refresh = useAuthStore((s) => s.refresh);
 
@@ -36,7 +35,7 @@ export function AppShell() {
     void refresh();
   }, [refresh]);
 
-  function onSearch(event: React.FormEvent) {
+  function onSearch(event: FormEvent) {
     event.preventDefault();
     const q = query.trim();
     if (!q) return;
@@ -75,9 +74,11 @@ export function AppShell() {
         <header className="app-shell-header flex items-center gap-3 border-b border-border/80 bg-background/70 px-5 py-3 backdrop-blur-md">
           <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={onSearch}>
             <Input
+              id="app-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索视频…"
+              aria-label="搜索视频"
               className="max-w-xl bg-card/80"
             />
             <Button type="submit" variant="secondary">
@@ -107,11 +108,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      <LoginModal
-        open={loginOpen}
-        onClose={() => setLoginOpen(false)}
-        onLoggedIn={(next) => setProfile(next)}
-      />
+      <LoginModal open={loginOpen} />
     </div>
   );
 }

@@ -15,7 +15,7 @@ export function EmptyState({ title, description, actionLabel, onAction }: Props)
         <Inbox className="size-5" />
       </div>
       <div className="flex flex-col gap-1">
-        <h3 className="font-display text-lg font-semibold tracking-tight">{title}</h3>
+        <h2 className="font-display text-lg font-semibold tracking-tight">{title}</h2>
         {description ? <p className="max-w-sm text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {actionLabel && onAction ? (

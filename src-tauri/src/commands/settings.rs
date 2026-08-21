@@ -1,8 +1,17 @@
-use crate::app_error::AppResult;
+use crate::app_error::{AppError, AppResult};
 use crate::commands::AppState;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tauri::State;
+
+const ALLOWED_KEYS: &[&str] = &[
+    "theme",
+    "danmaku_enabled",
+    "danmaku_font_size",
+    "danmaku_max_rows",
+    "default_volume",
+    "default_speed",
+];
 
 #[tauri::command]
 pub fn settings_get_all(state: State<'_, AppState>) -> AppResult<HashMap<String, String>> {
@@ -17,6 +26,9 @@ pub struct SettingPatch {
 
 #[tauri::command]
 pub fn settings_set(state: State<'_, AppState>, patch: SettingPatch) -> AppResult<()> {
+    if !ALLOWED_KEYS.contains(&patch.key.as_str()) {
+        return Err(AppError::message("不支持的设置项"));
+    }
     state.with_storage(|storage| {
         storage.set_setting(&patch.key, &patch.value)?;
         Ok(())
@@ -25,14 +37,14 @@ pub fn settings_set(state: State<'_, AppState>, patch: SettingPatch) -> AppResul
         *state
             .danmaku_on
             .lock()
-            .map_err(|e| crate::app_error::AppError::message(e.to_string()))? = patch.value != "false";
+            .map_err(|e| AppError::message(e.to_string()))? = patch.value != "false";
     }
     if patch.key == "danmaku_font_size" {
         if let Ok(n) = patch.value.parse::<u32>() {
             state
                 .danmaku_opts
                 .lock()
-                .map_err(|e| crate::app_error::AppError::message(e.to_string()))?
+                .map_err(|e| AppError::message(e.to_string()))?
                 .font_size = n.clamp(28, 72);
         }
     }
@@ -41,7 +53,7 @@ pub fn settings_set(state: State<'_, AppState>, patch: SettingPatch) -> AppResul
             state
                 .danmaku_opts
                 .lock()
-                .map_err(|e| crate::app_error::AppError::message(e.to_string()))?
+                .map_err(|e| AppError::message(e.to_string()))?
                 .max_rows = n.clamp(4, 20);
         }
     }

@@ -179,9 +179,6 @@ pub fn player_set_danmaku(state: State<'_, AppState>, enabled: bool) -> AppResul
         .danmaku_on
         .lock()
         .map_err(|e| AppError::message(e.to_string()))? = enabled;
-    let _ = state.with_storage(|storage| {
-        Ok(storage.set_setting("danmaku_enabled", if enabled { "true" } else { "false" })?)
-    });
     state
         .player
         .lock()
@@ -207,15 +204,9 @@ pub fn player_set_danmaku_prefs(
         .map_err(|e| AppError::message(e.to_string()))?;
     if let Some(size) = prefs.font_size {
         opts.font_size = size.clamp(28, 72);
-        let _ = state.with_storage(|storage| {
-            Ok(storage.set_setting("danmaku_font_size", &opts.font_size.to_string())?)
-        });
     }
     if let Some(rows) = prefs.max_rows {
         opts.max_rows = rows.clamp(4, 20);
-        let _ = state.with_storage(|storage| {
-            Ok(storage.set_setting("danmaku_max_rows", &opts.max_rows.to_string())?)
-        });
     }
     Ok(())
 }

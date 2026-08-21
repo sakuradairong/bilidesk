@@ -8,17 +8,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Profile } from "@/types";
+import { useAuthStore } from "@/stores/auth";
 
 type Props = {
   open: boolean;
-  onClose: () => void;
-  onLoggedIn: (profile: Profile) => void;
 };
 
-export function LoginModal({ open, onClose, onLoggedIn }: Props) {
+export function LoginModal({ open }: Props) {
   const [url, setUrl] = useState("");
-  const [key, setKey] = useState("");
   const [status, setStatus] = useState("准备二维码…");
   const [error, setError] = useState("");
 
@@ -26,29 +23,34 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
     if (!open) return;
     let cancelled = false;
     let timer: number | undefined;
+    let inFlight = false;
     (async () => {
       try {
         const start = await authQrStart();
         if (cancelled) return;
         setUrl(start.url);
-        setKey(start.qrcode_key);
         setStatus("请使用哔哩哔哩 App 扫码");
         setError("");
         timer = window.setInterval(async () => {
+          if (cancelled || inFlight) return;
+          inFlight = true;
           try {
             const poll = await authQrPoll(start.qrcode_key);
             if (cancelled) return;
             if (poll.status === "scanned") setStatus("已扫描，请在手机上确认");
             if (poll.status === "confirmed" && poll.profile) {
-              onLoggedIn(poll.profile);
-              onClose();
+              if (timer) window.clearInterval(timer);
+              useAuthStore.getState().setProfile(poll.profile);
+              useAuthStore.getState().setLoginOpen(false);
             }
             if (poll.status === "expired") {
               setStatus("二维码已过期，请关闭后重试");
-              window.clearInterval(timer);
+              if (timer) window.clearInterval(timer);
             }
           } catch (err) {
             setError(toAppError(err).message);
+          } finally {
+            inFlight = false;
           }
         }, 1500);
       } catch (err) {
@@ -59,10 +61,10 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
-  }, [open, onClose, onLoggedIn]);
+  }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && useAuthStore.getState().setLoginOpen(false)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>扫码登录</DialogTitle>
@@ -79,7 +81,6 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
             </div>
           )}
           <p className="text-sm text-muted-foreground">{status}</p>
-          {key ? <p className="text-[11px] text-muted-foreground/70">key: {key.slice(0, 8)}…</p> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
       </DialogContent>

@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   playerOpen,
   playerSeek,
   playerSetBounds,
   playerSetDanmaku,
   playerSetDanmakuPrefs,
+  playerSetSpeed,
   playerSetVolume,
   playerStop,
   playerTogglePause,
@@ -14,14 +15,22 @@ import {
 } from "@/api";
 import { formatDuration } from "@/components/VideoCard";
 import { Button } from "@/components/ui/button";
+import { isHotkeyIgnored } from "@/lib/hotkeys";
+import { watchBack } from "@/lib/watch";
 import type { PlaySession, PlayerProgress } from "@/types";
 import { useSettingsStore } from "@/stores/settings";
 
 export function PlayerPage() {
   const { bvid = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+  const loaded = useSettingsStore((s) => s.loaded);
   const defaultVolume = useSettingsStore((s) => s.defaultVolume);
+  const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
   const danmakuEnabled = useSettingsStore((s) => s.danmakuEnabled);
+  const danmakuFontSize = useSettingsStore((s) => s.danmakuFontSize);
+  const danmakuMaxRows = useSettingsStore((s) => s.danmakuMaxRows);
   const [session, setSession] = useState<PlaySession | null>(null);
   const [progress, setProgress] = useState<PlayerProgress>({
     time: 0,
@@ -30,13 +39,15 @@ export function PlayerPage() {
     volume: defaultVolume,
   });
   const [danmaku, setDanmaku] = useState(danmakuEnabled);
+  const [density, setDensity] = useState(String(danmakuMaxRows));
+  const [fontSize, setFontSize] = useState(String(danmakuFontSize));
   const [error, setError] = useState("");
-  const [density, setDensity] = useState(String(useSettingsStore.getState().danmakuMaxRows));
   const stageRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(progress);
+  const appliedDefaults = useRef<string | null>(null);
   progressRef.current = progress;
 
-  const onBack = () => navigate(-1);
+  const onBack = () => watchBack(navigate, from);
 
   useEffect(() => {
     document.documentElement.classList.add("player-mode");
@@ -66,19 +77,23 @@ export function PlayerPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     let unlistenProgress: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
     listen<PlayerProgress>("player-progress", (event) => {
       setProgress(event.payload);
     }).then((fn) => {
-      unlistenProgress = fn;
+      if (cancelled) fn();
+      else unlistenProgress = fn;
     });
     listen<string>("player-error", (event) => {
       setError(event.payload);
     }).then((fn) => {
-      unlistenError = fn;
+      if (cancelled) fn();
+      else unlistenError = fn;
     });
     return () => {
+      cancelled = true;
       unlistenProgress?.();
       unlistenError?.();
     };
@@ -86,12 +101,15 @@ export function PlayerPage() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (isHotkeyIgnored(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
         void playerTogglePause();
       } else if (event.code === "ArrowRight") {
+        event.preventDefault();
         void playerSeek(progressRef.current.time + 5);
       } else if (event.code === "ArrowLeft") {
+        event.preventDefault();
         void playerSeek(Math.max(progressRef.current.time - 5, 0));
       } else if (event.code === "ArrowUp") {
         event.preventDefault();
@@ -110,13 +128,10 @@ export function PlayerPage() {
   useEffect(() => {
     if (!bvid) return;
     let cancelled = false;
+    appliedDefaults.current = null;
     playerOpen(bvid)
-      .then(async (next) => {
-        if (cancelled) return;
-        setSession(next);
-        await playerSetVolume(defaultVolume);
-        await playerSetDanmaku(danmakuEnabled);
-        setDanmaku(danmakuEnabled);
+      .then((next) => {
+        if (!cancelled) setSession(next);
       })
       .catch((err) => {
         if (!cancelled) setError(toAppError(err).message);
@@ -125,7 +140,29 @@ export function PlayerPage() {
       cancelled = true;
       void playerStop();
     };
-  }, [bvid, defaultVolume, danmakuEnabled]);
+  }, [bvid]);
+
+  useEffect(() => {
+    if (!session || !loaded) return;
+    const key = session.bvid;
+    if (appliedDefaults.current === key) return;
+    appliedDefaults.current = key;
+    setDanmaku(danmakuEnabled);
+    setDensity(String(danmakuMaxRows));
+    setFontSize(String(danmakuFontSize));
+    void playerSetVolume(defaultVolume);
+    void playerSetSpeed(defaultSpeed);
+    void playerSetDanmaku(danmakuEnabled);
+    void playerSetDanmakuPrefs(danmakuFontSize, danmakuMaxRows);
+  }, [
+    session,
+    loaded,
+    defaultVolume,
+    defaultSpeed,
+    danmakuEnabled,
+    danmakuFontSize,
+    danmakuMaxRows,
+  ]);
 
   const qualityOptions = useMemo(() => session?.qualities ?? [], [session]);
 
@@ -169,7 +206,15 @@ export function PlayerPage() {
         <div className="player-title">{session?.title ?? "正在打开…"}</div>
       </header>
       <div className="player-stage" ref={stageRef} onClick={() => void playerTogglePause()} />
-      {error ? <p className="error-line" style={{ padding: "0 16px", margin: 0, background: "#101216", color: "#ff8f8f" }}>{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="error-line"
+          style={{ padding: "0 16px", margin: 0, background: "#101216", color: "#ff8f8f" }}
+        >
+          {error}
+        </p>
+      ) : null}
       <footer>
         <button className="ghost-btn" onClick={() => void playerTogglePause()}>
           {progress.paused ? "播放" : "暂停"}
@@ -184,6 +229,7 @@ export function PlayerPage() {
           max={Math.max(progress.duration, 1)}
           step={0.1}
           value={progress.time}
+          aria-label="进度"
           onChange={(e) => void playerSeek(Number(e.target.value))}
         />
         <input
@@ -191,10 +237,14 @@ export function PlayerPage() {
           min={0}
           max={130}
           value={progress.volume}
+          aria-label="音量"
           onChange={(e) => void playerSetVolume(Number(e.target.value))}
-          title="音量"
         />
-        <select value={session?.cid ?? ""} onChange={(e) => void changePage(Number(e.target.value))}>
+        <select
+          value={session?.cid ?? ""}
+          aria-label="分P"
+          onChange={(e) => void changePage(Number(e.target.value))}
+        >
           {(session?.pages ?? []).map((page) => (
             <option key={page.cid} value={page.cid}>
               P{page.page} {page.part}
@@ -203,6 +253,7 @@ export function PlayerPage() {
         </select>
         <select
           value={session?.current_quality ?? ""}
+          aria-label="清晰度"
           onChange={(e) => void changeQuality(Number(e.target.value))}
         >
           {qualityOptions.map((option) => (
@@ -216,22 +267,27 @@ export function PlayerPage() {
         </button>
         <select
           value={density}
+          aria-label="弹幕密度"
           onChange={(e) => {
             setDensity(e.target.value);
             void playerSetDanmakuPrefs(undefined, Number(e.target.value));
           }}
         >
           <option value="8">弹幕稀</option>
-          <option value="12">弹幕中</option>
-          <option value="18">弹幕密</option>
+          <option value="10">弹幕中</option>
+          <option value="16">弹幕密</option>
         </select>
         <select
-          defaultValue="48"
-          onChange={(e) => void playerSetDanmakuPrefs(Number(e.target.value), undefined)}
+          value={fontSize}
+          aria-label="弹幕字号"
+          onChange={(e) => {
+            setFontSize(e.target.value);
+            void playerSetDanmakuPrefs(Number(e.target.value), undefined);
+          }}
         >
           <option value="36">字号小</option>
-          <option value="48">字号中</option>
-          <option value="64">字号大</option>
+          <option value="42">字号中</option>
+          <option value="56">字号大</option>
         </select>
       </footer>
     </div>

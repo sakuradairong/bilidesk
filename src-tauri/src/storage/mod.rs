@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const HISTORY_MIGRATION_VERSION: i64 = 1;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -52,22 +55,104 @@ impl Storage {
         &self.data_dir
     }
 
-    fn migrate_legacy_history(&self) -> BiliResult<()> {
-        let legacy = session::history_path(&self.data_dir);
+    fn migrated_path(&self) -> PathBuf {
+        self.data_dir.join("history.json.migrated")
+    }
+
+    fn has_migration(&self, version: i64) -> BiliResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        conn.query_row(
+            "SELECT 1 FROM schema_migrations WHERE version = ?1",
+            params![version],
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|row| row.is_some())
+        .map_err(|e| BiliError::msg(e.to_string()))
+    }
+
+    fn mark_migration(&self, version: i64) -> BiliResult<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+            params![version, now],
+        )
+        .map_err(|e| BiliError::msg(e.to_string()))?;
+        Ok(())
+    }
+
+    fn history_count(&self) -> BiliResult<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        conn.query_row("SELECT COUNT(*) FROM history", [], |row| row.get(0))
+            .map_err(|e| BiliError::msg(e.to_string()))
+    }
+
+    fn read_history_file(path: &Path) -> BiliResult<Vec<HistoryItem>> {
+        Ok(serde_json::from_slice(&fs::read(path)?)?)
+    }
+
+    fn quarantine(path: &Path) {
+        let dest = PathBuf::from(format!("{}.corrupt", path.to_string_lossy()));
+        let _ = fs::rename(path, dest);
+    }
+
+    fn import_history(&self, items: Vec<HistoryItem>) -> BiliResult<()> {
+        for item in items.into_iter().rev() {
+            self.push_history(item)?;
+        }
+        Ok(())
+    }
+
+    fn retire_legacy(&self, legacy: &Path, migrated: &Path) -> BiliResult<()> {
         if !legacy.exists() {
             return Ok(());
         }
-        let migrated_marker = self.data_dir.join("history.json.migrated");
-        if migrated_marker.exists() {
+        if fs::rename(legacy, migrated).is_err() {
+            let _ = fs::remove_file(legacy);
+        }
+        Ok(())
+    }
+
+    fn migrate_legacy_history(&self) -> BiliResult<()> {
+        if self.has_migration(HISTORY_MIGRATION_VERSION)? && self.history_count()? > 0 {
             return Ok(());
         }
-        let items = session::load_history(&self.data_dir)?;
-        if !items.is_empty() {
-            for item in items.into_iter().rev() {
-                self.push_history(item)?;
+
+        let legacy = session::history_path(&self.data_dir);
+        let migrated = self.migrated_path();
+        let sources = [legacy.clone(), migrated.clone()];
+
+        for path in &sources {
+            if !path.exists() {
+                continue;
+            }
+            match Self::read_history_file(path) {
+                Ok(items) => {
+                    self.import_history(items)?;
+                    if path == &legacy {
+                        self.retire_legacy(&legacy, &migrated)?;
+                    }
+                    self.mark_migration(HISTORY_MIGRATION_VERSION)?;
+                    return Ok(());
+                }
+                Err(_) => Self::quarantine(path),
             }
         }
-        let _ = fs::rename(&legacy, &migrated_marker);
+
+        self.mark_migration(HISTORY_MIGRATION_VERSION)?;
         Ok(())
     }
 
@@ -206,10 +291,8 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn history_roundtrip_and_legacy_migration() {
+    fn temp_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "bilidesk-storage-{}",
             SystemTime::now()
@@ -218,19 +301,54 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
-        let legacy = vec![HistoryItem {
-            bvid: "BV1xx".into(),
+        dir
+    }
+
+    fn sample(bvid: &str) -> HistoryItem {
+        HistoryItem {
+            bvid: bvid.into(),
             title: "t".into(),
             cover: "c".into(),
             owner: "o".into(),
             viewed_at: 100,
-        }];
-        session::save_history(&dir, &legacy).unwrap();
+        }
+    }
+
+    #[test]
+    fn history_roundtrip_and_legacy_migration() {
+        let dir = temp_dir();
+        session::save_history(&dir, &[sample("BV1xx")]).unwrap();
         let storage = Storage::open(&dir).unwrap();
         let items = storage.list_history().unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].bvid, "BV1xx");
         assert!(dir.join("history.json.migrated").exists());
+        assert!(storage.has_migration(1).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_history_json_does_not_block_open() {
+        let dir = temp_dir();
+        fs::write(session::history_path(&dir), b"{not-json").unwrap();
+        let storage = Storage::open(&dir).unwrap();
+        assert!(storage.list_history().unwrap().is_empty());
+        assert!(storage.has_migration(1).unwrap());
+        assert!(!session::history_path(&dir).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reimports_migrated_file_when_database_is_recreated() {
+        let dir = temp_dir();
+        session::save_history(&dir, &[sample("BV1yy")]).unwrap();
+        Storage::open(&dir).unwrap();
+        assert!(dir.join("history.json.migrated").exists());
+        let _ = fs::remove_file(dir.join("bilidesk.db"));
+        let storage = Storage::open(&dir).unwrap();
+        let items = storage.list_history().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].bvid, "BV1yy");
         let _ = fs::remove_dir_all(&dir);
     }
 }

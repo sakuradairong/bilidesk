@@ -441,34 +441,6 @@ impl BiliClient {
         Ok((content_type, bytes))
     }
 
-    pub fn push_history(&self, item: HistoryItem) -> BiliResult<()> {
-        let dir = self
-            .data_dir
-            .lock()
-            .map_err(|_| BiliError::msg("路径锁失败"))?
-            .clone();
-        if dir.as_os_str().is_empty() {
-            return Ok(());
-        }
-        let mut items = session::load_history(&dir)?;
-        items.retain(|existing| existing.bvid != item.bvid);
-        items.insert(0, item);
-        items.truncate(100);
-        session::save_history(&dir, &items)
-    }
-
-    pub fn history(&self) -> BiliResult<Vec<HistoryItem>> {
-        let dir = self
-            .data_dir
-            .lock()
-            .map_err(|_| BiliError::msg("路径锁失败"))?
-            .clone();
-        if dir.as_os_str().is_empty() {
-            return Ok(Vec::new());
-        }
-        session::load_history(&dir)
-    }
-
     pub fn http_headers_for_mpv(&self) -> BiliResult<Vec<String>> {
         Ok(vec![
             format!("User-Agent: {}", Session::user_agent()),

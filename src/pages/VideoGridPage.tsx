@@ -36,8 +36,8 @@ export function VideoGridPage({
     <div className="flex flex-col gap-4">
       {error ? <ErrorState message={error} onRetry={onRetry} /> : null}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-        {items.map((item) => (
-          <VideoCard key={`${item.bvid}-${item.cid ?? 0}`} item={item} onOpen={onOpen} />
+        {items.map((item, index) => (
+          <VideoCard key={`${item.bvid}-${item.cid ?? 0}-${index}`} item={item} onOpen={onOpen} />
         ))}
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (
