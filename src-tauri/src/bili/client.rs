@@ -24,6 +24,7 @@ const TOVIEW: &str = "https://api.bilibili.com/x/v2/history/toview";
 const USER_CARD: &str = "https://api.bilibili.com/x/web-interface/card";
 const USER_ARC: &str = "https://api.bilibili.com/x/space/wbi/arc/search";
 const POPULAR: &str = "https://api.bilibili.com/x/web-interface/popular";
+const RANKING: &str = "https://api.bilibili.com/x/web-interface/ranking/v2";
 const REGION_DYNAMIC: &str = "https://api.bilibili.com/x/web-interface/dynamic/region";
 const FAV_RESOURCE: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const DYNAMIC_FEED: &str = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
@@ -741,6 +742,14 @@ impl BiliClient {
             .collect())
     }
 
+    /// 全站或主分区视频排行榜，按上游返回顺序保留名次。
+    pub async fn ranking(&self, rid: u32) -> BiliResult<Vec<VideoCard>> {
+        let url = format!("{RANKING}?rid={rid}&type=all");
+        let value = self.get_json(&url).await?;
+        check_code(&value)?;
+        Ok(cards_from_ranking(&value))
+    }
+
     /// 分区最新稿件
     pub async fn region_dynamic(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
         let url = format!("{REGION_DYNAMIC}?rid={rid}&ps=30&pn={}", page.max(1));
@@ -996,6 +1005,16 @@ fn cards_from_feed(value: &Value) -> Vec<VideoCard> {
         .collect()
 }
 
+fn cards_from_ranking(value: &Value) -> Vec<VideoCard> {
+    value["data"]["list"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(parse_card)
+        .collect()
+}
+
 fn parse_search_card(value: &Value) -> Option<VideoCard> {
     if value["type"].as_str().unwrap_or("video") != "video"
         && value["typename"].as_str().unwrap_or("").is_empty()
@@ -1223,6 +1242,35 @@ mod tests {
         assert_eq!(cards[0].aid, 101);
         assert_eq!(cards[0].cid, Some(202));
         assert_eq!(cards[0].owner_face, "https://i0.hdslb.com/f.png");
+    }
+
+    #[test]
+    fn ranking_fixture_keeps_upstream_order() {
+        let value = json!({
+            "data": {
+                "list": [
+                    {
+                        "bvid": "BV1rank11111",
+                        "title": "first",
+                        "pic": "//i0.hdslb.com/first.jpg",
+                        "owner": { "name": "up-a" },
+                        "stat": { "view": 900 }
+                    },
+                    {
+                        "bvid": "BV1rank22222",
+                        "title": "second",
+                        "pic": "//i0.hdslb.com/second.jpg",
+                        "owner": { "name": "up-b" },
+                        "stat": { "view": 800 }
+                    }
+                ]
+            }
+        });
+        let cards = cards_from_ranking(&value);
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].bvid, "BV1rank11111");
+        assert_eq!(cards[1].bvid, "BV1rank22222");
+        assert_eq!(cards[0].views, 900);
     }
 
     #[test]

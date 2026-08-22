@@ -4,12 +4,12 @@
 
 ## 能力
 
-- 二维码登录、首页胶囊 Tab（推荐 / 热门 / 分区 / 动态）、搜索、本地观看历史（SQLite）
+- 二维码登录、首页胶囊 Tab（推荐 / 热门 / 排行 / 分区 / 动态）、搜索、本地观看历史（SQLite）
 - UGC 播放（分P / 当前登录态真实可用清晰度）、弹幕（ASS → 进程内 libmpv，字号 / 密度 / 透明度 / 显示区域 / 加粗可调）
 - 播放体验：自动连播（下一P → 相关推荐，5 秒可取消倒计时）、断点续播（SQLite 记忆进度）、0.1 步进倍速滑杆（0.5~3.0x）
 - 「精选」沉浸连播、一键三连、赞 / 不喜欢 / 投币 / 收藏、稍后再看、发弹幕、查看与发送评论
 - 用户空间页（UP 主资料 / 关注 / 投稿浏览）、收藏夹与稍后再看列表页
-- 界面：BiliOne 风格统一视觉（大圆角卡片、可选主题色：粉 / 青 / 蓝 / 紫 / 绿）、播放页画面外封面取色渐变背景
+- 界面：BiliOne 风格统一视觉（顶部胶囊导航、封面氛围色大圆角卡片、可选主题色：粉 / 青 / 蓝 / 紫 / 绿）、播放页画面外封面取色渐变背景
 - 设置页（浅色 / 深色 / 跟随系统、主题色、弹幕与播放默认值、自动连播与续播开关）
 - 快捷键：空格暂停、左右 seek、`+/-` 调音量；播放页上下也可调音量；精选上下切条（或 `F` 下一条）、`Esc` 先关评论再回首页
 
@@ -19,7 +19,7 @@
 
 - 前端：React 19 + Vite + Tailwind CSS + shadcn/ui + React Router + Zustand
 - 后端：Tauri 2（Rust），按 auth / feed / video / social / storage / player 领域拆分
-- 本地数据：SQLite（历史、设置）；Cookie 仍为 `session.json`（启动时迁移旧 `history.json`）
+- 本地数据：SQLite（历史、设置）；Cookie 使用 Windows 当前用户范围的 DPAPI 加密（自动迁移旧明文 `session.json`）
 
 ## 环境
 
@@ -28,10 +28,10 @@
 - Rust / MSVC 构建工具（Tauri 2）
 - [libmpv](https://mpv.io/)（LGPL）。开发或打包前把 `libmpv-2.dll` 放到 `src-tauri/vendor/mpv/`，或设置 `BILIDESK_MPV`
 
-推荐用 [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild/releases) 的 **`mpv-dev-lgpl-x86_64`** 包（不要用 `v3` 包，兼容面更窄）。也可：
+项目固定使用 [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild/releases) 的 **`mpv-dev-lgpl-x86_64`** 包（不要用 `v3` 包，兼容面更窄），下载脚本会验证版本和 SHA-256：
 
-```bash
-bash scripts/fetch-mpv.sh
+```powershell
+pwsh -File scripts/fetch-mpv.ps1
 ```
 
 ## 运行
@@ -46,7 +46,7 @@ npm run tauri dev
 Windows 本机：
 
 ```powershell
-bash scripts/fetch-mpv.sh
+pwsh -File scripts/fetch-mpv.ps1
 npm run tauri build
 ```
 
@@ -54,4 +54,8 @@ npm run tauri build
 
 GitHub Actions：手动运行 `Windows installer` workflow，或推送 `v*` 标签，产物在 Artifact 里。
 
-数据目录保存登录 Cookie、SQLite 数据库与本地观看历史。捆绑组件说明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+数据目录保存加密登录 Cookie、SQLite 数据库与本地观看历史。隐私、安全、发布和捆绑组件说明见 [PRIVACY.md](PRIVACY.md)、[SECURITY.md](SECURITY.md)、[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) 与 [THIRD_PARTY.md](THIRD_PARTY.md)。设计与功能参考来源见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
+
+## 许可证
+
+BiliDesk 自有代码采用 [MIT License](LICENSE)。安装包内动态加载的 libmpv 及其依赖不属于 MIT 授权范围，仍分别遵循 [THIRD_PARTY.md](THIRD_PARTY.md) 中列出的许可证。

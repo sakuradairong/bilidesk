@@ -103,6 +103,10 @@ export async function feedPopular(page = 1): Promise<VideoCard[]> {
   return call("feed_popular", { page });
 }
 
+export async function feedRanking(rid = 0): Promise<VideoCard[]> {
+  return call("feed_ranking", { rid });
+}
+
 export async function feedRegion(rid: number, page = 1): Promise<VideoCard[]> {
   return call("feed_region", { rid, page });
 }

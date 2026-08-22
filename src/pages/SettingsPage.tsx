@@ -1,4 +1,5 @@
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -10,6 +11,10 @@ import { Switch } from "@/components/ui/switch";
 import { ACCENTS, useSettingsStore } from "@/stores/settings";
 import type { ThemeMode } from "@/types";
 import { cn } from "@/lib/utils";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ExternalLink, ShieldCheck } from "lucide-react";
+
+const PROJECT_URL = "https://github.com/sakuradairong/bilidesk";
 
 export function SettingsPage() {
   const theme = useSettingsStore((s) => s.theme);
@@ -235,6 +240,48 @@ export function SettingsPage() {
               void setKey("resume_position", checked ? "true" : "false")
             }
           />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+          <div>
+            <h2 className="text-sm font-semibold">关于与隐私</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              BiliDesk 0.1.0 · 非官方客户端。登录 Cookie 使用 Windows
+              当前用户范围的 DPAPI 加密，本项目不收集遥测数据。
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openUrl(`${PROJECT_URL}/blob/master/PRIVACY.md`)}
+          >
+            隐私说明
+            <ExternalLink aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openUrl(`${PROJECT_URL}/security/advisories/new`)}
+          >
+            安全报告
+            <ExternalLink aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openUrl(PROJECT_URL)}
+          >
+            项目主页
+            <ExternalLink aria-hidden="true" />
+          </Button>
         </div>
       </section>
     </div>

@@ -2,13 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toAppError, watchlaterClear, watchlaterList } from "@/api";
 import { Button } from "@/components/ui/button";
+import { LoginRequired } from "@/components/LoginRequired";
 import { VideoGridPage } from "@/pages/VideoGridPage";
 import { openWatch } from "@/lib/watch";
+import { useAuthStore } from "@/stores/auth";
 import type { VideoCard, WatchLaterItem } from "@/types";
 
 export function WatchLaterPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const canLoad = useAuthStore((state) => state.authReady && !!state.profile);
   const [items, setItems] = useState<VideoCard[]>([]);
   const [raw, setRaw] = useState<WatchLaterItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,8 +41,9 @@ export function WatchLaterPage() {
   }, []);
 
   useEffect(() => {
+    if (!canLoad) return;
     void load();
-  }, [load]);
+  }, [canLoad, load]);
 
   async function clearAll() {
     try {
@@ -59,26 +63,28 @@ export function WatchLaterPage() {
             稍后再看
           </h1>
           <p className="text-sm text-muted-foreground">
-            {raw.length > 0 ? `共 ${raw.length} 个稿件` : "云端稍后再看列表"}
+            {canLoad && raw.length > 0 ? `共 ${raw.length} 个稿件` : "云端稍后再看列表"}
           </p>
         </div>
-        {raw.length > 0 ? (
+        {canLoad && raw.length > 0 ? (
           <Button variant="outline" onClick={() => void clearAll()}>
             清空
           </Button>
         ) : null}
       </div>
-      <VideoGridPage
-        items={items}
-        loading={loading}
-        error={error}
-        onOpen={(bvid) =>
-          openWatch(navigate, bvid, `${location.pathname}${location.search}`)
-        }
-        onRetry={() => void load()}
-        emptyTitle="稍后再看是空的"
-        emptyDescription="播放页点「稍后再看」按钮即可添加"
-      />
+      <LoginRequired description="登录后可查看和管理云端稍后再看列表">
+        <VideoGridPage
+          items={items}
+          loading={loading}
+          error={error}
+          onOpen={(bvid) =>
+            openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+          }
+          onRetry={() => void load()}
+          emptyTitle="稍后再看是空的"
+          emptyDescription="播放页点「稍后再看」按钮即可添加"
+        />
+      </LoginRequired>
     </div>
   );
 }

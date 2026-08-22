@@ -16,3 +16,9 @@ export const REGIONS: { rid: number; name: string }[] = [
   { rid: 5, name: "娱乐" },
   { rid: 181, name: "影视" },
 ];
+
+/** 排行榜接口支持的全站及 UGC 主分区。 */
+export const RANKING_REGIONS: { rid: number; name: string }[] = [
+  { rid: 0, name: "全站" },
+  ...REGIONS.filter((region) => ![13, 168].includes(region.rid)),
+];

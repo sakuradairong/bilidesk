@@ -74,15 +74,15 @@ pub async fn player_open(
             .lock()
             .map_err(|e| AppError::message(e.to_string()))?;
         state.ensure_player_request(request_generation, scope)?;
-        player.open(
-            &window_play,
-            app_play.clone(),
-            &current_play,
-            &headers,
-            ass_path.as_deref(),
+        player.open(player::PlayerOpenRequest {
+            window: &window_play,
+            app: app_play.clone(),
+            stream: &current_play,
+            headers: &headers,
+            ass_path: ass_path.as_deref(),
             danmaku_on,
             presentation,
-        )?;
+        })?;
         if let Err(err) = state.ensure_player_request(request_generation, scope) {
             let _ = player.stop();
             return Err(err);

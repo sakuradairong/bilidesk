@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { dynamicFeed, toAppError } from "@/api";
+import { LoginRequired } from "@/components/LoginRequired";
 import { VideoGridPage } from "@/pages/VideoGridPage";
 import { openWatch } from "@/lib/watch";
+import { useAuthStore } from "@/stores/auth";
 import type { VideoCard } from "@/types";
 
 type Row = {
@@ -13,6 +15,7 @@ type Row = {
 export function DynamicFeedView() {
   const navigate = useNavigate();
   const location = useLocation();
+  const canLoad = useAuthStore((state) => state.authReady && !!state.profile);
   const [items, setItems] = useState<Row[]>([]);
   const [offset, setOffset] = useState("");
   const [hasMore, setHasMore] = useState(true);
@@ -47,21 +50,24 @@ export function DynamicFeedView() {
   }, []);
 
   useEffect(() => {
+    if (!canLoad) return;
     void loadPage();
-  }, [loadPage]);
+  }, [canLoad, loadPage]);
 
   return (
-    <VideoGridPage
-      items={items.map((row) => row.card)}
-      loading={loading && items.length === 0}
-      error={error}
-      onOpen={(bvid) =>
-        openWatch(navigate, bvid, `${location.pathname}${location.search}`)
-      }
-      onMore={hasMore ? () => void loadPage(offset) : undefined}
-      onRetry={() => void loadPage(offset)}
-      emptyTitle="没有视频动态"
-      emptyDescription="登录并关注一些 UP 主后，这里会展示他们的最新投稿"
-    />
+    <LoginRequired description="登录并关注 UP 主后，这里会展示他们的最新投稿">
+      <VideoGridPage
+        items={items.map((row) => row.card)}
+        loading={loading && items.length === 0}
+        error={error}
+        onOpen={(bvid) =>
+          openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+        }
+        onMore={hasMore ? () => void loadPage(offset) : undefined}
+        onRetry={() => void loadPage(offset)}
+        emptyTitle="没有视频动态"
+        emptyDescription="关注一些 UP 主后，这里会展示他们的最新投稿"
+      />
+    </LoginRequired>
   );
 }

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const WEB_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const ENCRYPTED_SESSION_MAGIC: &[u8] = b"BILIDESK_SESSION_V1\0";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Session {
@@ -66,8 +67,15 @@ impl Session {
             return Ok(session);
         }
         let bytes = fs::read(path)?;
-        let mut session: Session = serde_json::from_slice(&bytes)?;
+        let (json, needs_migration) = match bytes.strip_prefix(ENCRYPTED_SESSION_MAGIC) {
+            Some(encrypted) => (unprotect_session(encrypted)?, false),
+            None => (bytes, true),
+        };
+        let mut session: Session = serde_json::from_slice(&json)?;
         session.ensure_buvid();
+        if needs_migration {
+            session.save(path)?;
+        }
         Ok(session)
     }
 
@@ -75,7 +83,12 @@ impl Session {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, serde_json::to_vec_pretty(self)?)?;
+        let json = serde_json::to_vec(self)?;
+        let encrypted = protect_session(&json)?;
+        let mut output = Vec::with_capacity(ENCRYPTED_SESSION_MAGIC.len() + encrypted.len());
+        output.extend_from_slice(ENCRYPTED_SESSION_MAGIC);
+        output.extend_from_slice(&encrypted);
+        fs::write(path, output)?;
         Ok(())
     }
 
@@ -90,6 +103,89 @@ impl Session {
             self.cookies.remove(key);
         }
     }
+}
+
+#[cfg(windows)]
+fn protect_session(bytes: &[u8]) -> BiliResult<Vec<u8>> {
+    use windows::core::w;
+    use windows::Win32::Security::Cryptography::{
+        CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
+
+    let input_len =
+        u32::try_from(bytes.len()).map_err(|_| super::error::BiliError::msg("会话数据过大"))?;
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: input_len,
+        pbData: bytes.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        CryptProtectData(
+            &input,
+            w!("BiliDesk session"),
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut output,
+        )
+        .map_err(|err| super::error::BiliError::msg(format!("加密登录会话失败: {err}")))?;
+    }
+    copy_and_free_blob(output)
+}
+
+#[cfg(windows)]
+fn unprotect_session(bytes: &[u8]) -> BiliResult<Vec<u8>> {
+    use windows::Win32::Security::Cryptography::{
+        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
+
+    let input_len =
+        u32::try_from(bytes.len()).map_err(|_| super::error::BiliError::msg("会话数据过大"))?;
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: input_len,
+        pbData: bytes.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        CryptUnprotectData(
+            &input,
+            None,
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut output,
+        )
+        .map_err(|err| super::error::BiliError::msg(format!("解密登录会话失败: {err}")))?;
+    }
+    copy_and_free_blob(output)
+}
+
+#[cfg(windows)]
+fn copy_and_free_blob(
+    blob: windows::Win32::Security::Cryptography::CRYPT_INTEGER_BLOB,
+) -> BiliResult<Vec<u8>> {
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+
+    if blob.pbData.is_null() {
+        return Err(super::error::BiliError::msg("Windows 返回了空的会话数据"));
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(blob.pbData, blob.cbData as usize).to_vec() };
+    unsafe {
+        LocalFree(Some(HLOCAL(blob.pbData.cast())));
+    }
+    Ok(bytes)
+}
+
+#[cfg(not(windows))]
+fn protect_session(bytes: &[u8]) -> BiliResult<Vec<u8>> {
+    Ok(bytes.to_vec())
+}
+
+#[cfg(not(windows))]
+fn unprotect_session(bytes: &[u8]) -> BiliResult<Vec<u8>> {
+    Ok(bytes.to_vec())
 }
 
 pub fn session_path(data_dir: &Path) -> PathBuf {
@@ -123,5 +219,45 @@ mod tests {
             parse_cookie_pair("SESSDATA=abc123; Path=/; Domain=.bilibili.com; HttpOnly").unwrap();
         assert_eq!(name, "SESSDATA");
         assert_eq!(value, "abc123");
+    }
+
+    #[test]
+    fn saved_session_does_not_contain_plaintext_cookie() {
+        let dir = std::env::temp_dir().join(format!("bilidesk-session-{}", Uuid::new_v4()));
+        let path = session_path(&dir);
+        let mut session = Session::default();
+        session
+            .cookies
+            .insert("SESSDATA".into(), "sensitive-value".into());
+
+        session.save(&path).unwrap();
+        let raw = fs::read(&path).unwrap();
+        assert!(raw.starts_with(ENCRYPTED_SESSION_MAGIC));
+        #[cfg(windows)]
+        assert!(!raw
+            .windows(b"sensitive-value".len())
+            .any(|part| part == b"sensitive-value"));
+        assert_eq!(
+            Session::load(&path).unwrap().cookies.get("SESSDATA"),
+            Some(&"sensitive-value".to_string())
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn plaintext_session_is_migrated_on_load() {
+        let dir = std::env::temp_dir().join(format!("bilidesk-session-migrate-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = session_path(&dir);
+        fs::write(&path, br#"{"cookies":{"SESSDATA":"legacy"}}"#).unwrap();
+
+        let loaded = Session::load(&path).unwrap();
+        assert_eq!(loaded.cookies.get("SESSDATA"), Some(&"legacy".to_string()));
+        assert!(fs::read(&path)
+            .unwrap()
+            .starts_with(ENCRYPTED_SESSION_MAGIC));
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }

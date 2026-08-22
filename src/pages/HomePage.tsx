@@ -5,12 +5,14 @@ import { VideoGridPage } from "@/pages/VideoGridPage";
 import { PopularFeed } from "@/pages/PopularPage";
 import { RegionFeed } from "@/pages/RegionPage";
 import { DynamicFeedView } from "@/pages/DynamicPage";
+import { RankingFeed } from "@/pages/RankingPage";
 import { openWatch } from "@/lib/watch";
 import type { VideoCard } from "@/types";
 
 const TABS = [
   { key: "recommend", label: "推荐" },
   { key: "hot", label: "热门" },
+  { key: "ranking", label: "排行" },
   { key: "region", label: "分区" },
   { key: "dynamic", label: "动态" },
 ] as const;
@@ -78,11 +80,12 @@ export function HomePage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
-          首页
-        </h1>
+    <div className="flex flex-col gap-5">
+      <div className="page-heading flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="page-eyebrow">DISCOVER</p>
+          <h1 className="text-3xl font-bold tracking-tight">发现好内容</h1>
+        </div>
         <div className="pill-tabs" role="tablist" aria-label="首页内容">
           {TABS.map((item) => (
             <button
@@ -100,6 +103,7 @@ export function HomePage() {
       </div>
       {tab === "recommend" ? <RecommendFeed /> : null}
       {tab === "hot" ? <PopularFeed /> : null}
+      {tab === "ranking" ? <RankingFeed /> : null}
       {tab === "region" ? <RegionFeed /> : null}
       {tab === "dynamic" ? <DynamicFeedView /> : null}
     </div>

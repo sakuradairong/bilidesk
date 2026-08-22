@@ -21,19 +21,23 @@ export function formatViews(views: number): string {
 type Props = {
     item: VideoCardType;
     onOpen: (bvid: string) => void;
+    rank?: number;
 };
 
-export function VideoCard({ item, onOpen }: Props) {
+export function VideoCard({ item, onOpen, rank }: Props) {
+    const cover = item.cover ? mediaSrc(item.cover) : "";
+
     return (
         <button
             type="button"
-            className="group flex flex-col gap-2 text-left transition-transform duration-200 hover:-translate-y-0.5"
+            className="video-card group text-left"
             onClick={() => onOpen(item.bvid)}
+            aria-label={`${rank ? `第 ${rank} 名，` : ""}${item.title}`}
         >
-            <div className="relative aspect-video overflow-hidden rounded-2xl bg-muted shadow-md shadow-black/5 ring-1 ring-border/50">
-                {item.cover ? (
+            <div className="relative aspect-video overflow-hidden bg-muted">
+                {cover ? (
                     <img
-                        src={mediaSrc(item.cover)}
+                        src={cover}
                         alt=""
                         className="size-full object-cover transition duration-300 group-hover:scale-[1.03]"
                         loading="lazy"
@@ -45,14 +49,48 @@ export function VideoCard({ item, onOpen }: Props) {
                         {formatDuration(item.duration)}
                     </span>
                 ) : null}
+                {rank ? (
+                    <span className={`video-rank${rank <= 3 ? " is-top" : ""}`}>
+                        {rank}
+                    </span>
+                ) : null}
             </div>
-            <div className="flex flex-col gap-0.5 px-0.5">
-                <div className="line-clamp-2 text-sm font-medium leading-snug">
-                    {item.title}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                    {item.owner}
-                    {item.views > 0 ? ` · ${formatViews(item.views)}播放` : ""}
+            <div className="video-card-meta">
+                {cover ? (
+                    <img
+                        src={cover}
+                        alt=""
+                        aria-hidden="true"
+                        className="video-card-tint"
+                    />
+                ) : null}
+                <div className="video-card-scrim" />
+                <div className="relative flex min-h-[88px] flex-col justify-between gap-2 p-3">
+                    <div className="line-clamp-2 text-sm font-semibold leading-snug">
+                        {item.title}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2">
+                        {item.owner_face ? (
+                            <img
+                                src={mediaSrc(item.owner_face)}
+                                alt=""
+                                className="size-6 shrink-0 rounded-full object-cover ring-1 ring-white/40"
+                                loading="lazy"
+                            />
+                        ) : (
+                            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-background/55 text-[10px] font-semibold">
+                                {item.owner.slice(0, 1) || "UP"}
+                            </span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-xs text-foreground/70">
+                            {item.owner || "未知 UP 主"}
+                        </span>
+                        {item.views > 0 ? (
+                            <span className="shrink-0 text-[11px] tabular-nums text-foreground/60">
+                                {formatViews(item.views)}播放
+                            </span>
+                        ) : null}
+                    </div>
                 </div>
             </div>
         </button>

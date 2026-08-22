@@ -14,6 +14,7 @@ type Props = {
   onRetry?: () => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  ranked?: boolean;
 };
 
 export function VideoGridPage({
@@ -25,6 +26,7 @@ export function VideoGridPage({
   onRetry,
   emptyTitle = "暂无内容",
   emptyDescription,
+  ranked = false,
 }: Props) {
   if (error && items.length === 0) {
     return <ErrorState message={error} onRetry={onRetry} />;
@@ -35,9 +37,14 @@ export function VideoGridPage({
   return (
     <div className="flex flex-col gap-4">
       {error ? <ErrorState message={error} onRetry={onRetry} /> : null}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+      <div className="video-grid">
         {items.map((item, index) => (
-          <VideoCard key={`${item.bvid}-${item.cid ?? 0}-${index}`} item={item} onOpen={onOpen} />
+          <VideoCard
+            key={`${item.bvid}-${item.cid ?? 0}-${index}`}
+            item={item}
+            onOpen={onOpen}
+            rank={ranked ? index + 1 : undefined}
+          />
         ))}
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (

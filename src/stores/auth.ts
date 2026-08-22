@@ -4,6 +4,7 @@ import type { Profile } from "@/types";
 
 type AuthState = {
   profile: Profile | null;
+  authReady: boolean;
   loginOpen: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
@@ -13,22 +14,23 @@ type AuthState = {
 
 export const useAuthStore = create<AuthState>((set) => ({
   profile: null,
+  authReady: false,
   loginOpen: false,
   setLoginOpen: (open) => set({ loginOpen: open }),
-  setProfile: (profile) => set({ profile }),
+  setProfile: (profile) => set({ profile, authReady: true }),
   refresh: async () => {
     try {
       const me = await authMe();
-      set({ profile: me.is_login ? me : null });
+      set({ profile: me.is_login ? me : null, authReady: true });
     } catch {
-      set({ profile: null });
+      set({ profile: null, authReady: true });
     }
   },
   logout: async () => {
     try {
       await authLogout();
     } finally {
-      set({ profile: null });
+      set({ profile: null, authReady: true });
     }
   },
 }));

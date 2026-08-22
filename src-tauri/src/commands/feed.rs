@@ -41,6 +41,15 @@ pub async fn feed_popular(
     Ok(state.bili.popular(page.unwrap_or(1)).await?)
 }
 
+/// 全站或主分区视频排行榜
+#[tauri::command]
+pub async fn feed_ranking(
+    state: State<'_, AppState>,
+    rid: Option<u32>,
+) -> AppResult<Vec<VideoCard>> {
+    Ok(state.bili.ranking(rid.unwrap_or(0)).await?)
+}
+
 /// 分区最新稿件
 #[tauri::command]
 pub async fn feed_region(

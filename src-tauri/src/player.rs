@@ -26,6 +26,16 @@ pub enum PlayerPresentation {
     Backdrop,
 }
 
+pub struct PlayerOpenRequest<'a> {
+    pub window: &'a WebviewWindow,
+    pub app: AppHandle,
+    pub stream: &'a StreamChoice,
+    pub headers: &'a [String],
+    pub ass_path: Option<&'a Path>,
+    pub danmaku_on: bool,
+    pub presentation: PlayerPresentation,
+}
+
 impl StageBounds {
     fn is_usable(self) -> bool {
         self.width >= 16 && self.height >= 16
@@ -167,16 +177,16 @@ impl PlayerHost {
         self.command(MpvCmd::SubVisible(visible))
     }
 
-    pub fn open(
-        &mut self,
-        window: &WebviewWindow,
-        app: AppHandle,
-        stream: &StreamChoice,
-        headers: &[String],
-        ass_path: Option<&Path>,
-        danmaku_on: bool,
-        presentation: PlayerPresentation,
-    ) -> BiliResult<()> {
+    pub fn open(&mut self, request: PlayerOpenRequest<'_>) -> BiliResult<()> {
+        let PlayerOpenRequest {
+            window,
+            app,
+            stream,
+            headers,
+            ass_path,
+            danmaku_on,
+            presentation,
+        } = request;
         self.stop()?;
         self.presentation = presentation;
         self.window = Some(window.clone());

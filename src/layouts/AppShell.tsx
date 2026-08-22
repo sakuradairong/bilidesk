@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Compass,
   History,
+  Search,
   Settings,
   Sparkles,
   Star,
@@ -28,7 +29,6 @@ const nav = [
   { to: "/favorites", label: "收藏", icon: Star },
   { to: "/watchlater", label: "稍后再看", icon: Clock },
   { to: "/history", label: "历史", icon: History },
-  { to: "/settings", label: "设置", icon: Settings },
 ];
 
 export function AppShell() {
@@ -52,51 +52,61 @@ export function AppShell() {
   }
 
   return (
-    <div className="app-shell grid h-full min-h-0 grid-cols-[220px_1fr]">
-      <aside className="app-shell-aside flex min-h-0 flex-col gap-2 border-r border-border/80 bg-card/70 px-3 py-5 backdrop-blur-md">
-        <div className="mb-3 px-3">
-          <div className="font-display text-xl font-bold tracking-tight">
-            BiliDesk
-          </div>
-          <div className="text-xs text-muted-foreground">非官方 · 个人自用</div>
-        </div>
-        <nav className="flex flex-col gap-1">
+    <div className="app-shell flex h-full min-h-0 flex-col">
+      <header className="app-shell-header grid grid-cols-[minmax(150px,1fr)_auto_minmax(260px,1fr)] items-center gap-4 border-b border-border/70 bg-background/78 px-5 py-3 backdrop-blur-xl">
+        <NavLink to="/" className="app-brand min-w-0" aria-label="BiliDesk 首页">
+          <span className="app-brand-mark">B</span>
+          <span className="min-w-0">
+            <strong className="block truncate text-base leading-tight">BiliDesk</strong>
+            <small className="block truncate text-[11px] text-muted-foreground">
+              非官方 · 个人自用
+            </small>
+          </span>
+        </NavLink>
+
+        <nav className="app-shell-nav" aria-label="主导航">
           {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
+              aria-label={item.label}
+              title={item.label}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
-                  isActive
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "app-shell-nav-item",
+                  isActive ? "is-active" : "",
                 )
               }
             >
               <item.icon className="size-4" />
-              {item.label}
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
-      </aside>
-      <div className="app-shell-main flex min-h-0 min-w-0 flex-col">
-        <header className="app-shell-header flex items-center gap-3 border-b border-border/80 bg-background/70 px-5 py-3 backdrop-blur-md">
+
+        <div className="flex min-w-0 items-center justify-end gap-2">
           <form
-            className="flex min-w-0 flex-1 items-center gap-2"
+            className="app-search flex min-w-0 flex-1 items-center"
             onSubmit={onSearch}
           >
+            <Search className="ml-3 size-4 shrink-0 text-muted-foreground" />
             <Input
               id="app-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索视频…"
               aria-label="搜索视频"
-              className="max-w-xl bg-card/80"
+              className="h-10 min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0"
             />
-            <Button type="submit" variant="secondary">
-              搜索
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon"
+              aria-label="提交搜索"
+              className="mr-1 size-8 shrink-0 rounded-full"
+            >
+              <Search className="size-4" />
             </Button>
           </form>
           {profile ? (
@@ -107,7 +117,7 @@ export function AppShell() {
                     <AvatarImage src={mediaSrc(profile.face)} alt="" />
                     <AvatarFallback>{profile.name.slice(0, 1)}</AvatarFallback>
                   </Avatar>
-                  <span className="max-w-28 truncate text-sm">
+                  <span className="profile-name max-w-24 truncate text-sm">
                     {profile.name}
                   </span>
                 </Button>
@@ -124,13 +134,26 @@ export function AppShell() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button onClick={() => setLoginOpen(true)}>登录</Button>
+            <Button className="rounded-full" onClick={() => setLoginOpen(true)}>
+              登录
+            </Button>
           )}
-        </header>
-        <main className="app-shell-content min-h-0 flex-1 overflow-auto p-5">
+          <NavLink
+            to="/settings"
+            aria-label="设置"
+            className={({ isActive }) =>
+              cn("app-settings-link", isActive && "is-active")
+            }
+          >
+            <Settings className="size-4" />
+          </NavLink>
+        </div>
+      </header>
+      <main className="app-shell-content min-h-0 flex-1 overflow-auto px-5 py-5">
+        <div className="app-content-frame">
           <Outlet />
-        </main>
-      </div>
+        </div>
+      </main>
       <LoginModal open={loginOpen} />
     </div>
   );

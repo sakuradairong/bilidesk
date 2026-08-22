@@ -3,6 +3,7 @@ name = "bilidesk"
 version = "0.1.0"
 description = "Unofficial Bilibili desktop client for personal use"
 authors = ["BiliDesk"]
+license = "MIT"
 edition = "2021"
 
 [lib]
@@ -30,6 +31,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Security_Cryptography",
   "Win32_System_LibraryLoader",
   "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",

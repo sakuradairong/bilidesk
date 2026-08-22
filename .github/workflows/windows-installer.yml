@@ -6,8 +6,45 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
+  rust-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: src-tauri
+
+  quality:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm audit --audit-level=high
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
   nsis:
+    needs: [quality, rust-audit]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,15 +62,27 @@ jobs:
         run: choco install 7zip -y --no-progress
 
       - name: Fetch libmpv
-        shell: bash
-        run: bash scripts/fetch-mpv.sh
+        shell: pwsh
+        run: ./scripts/fetch-mpv.ps1
 
       - run: npm ci
 
       - name: Build NSIS installer
         run: npm run tauri build -- --target x86_64-pc-windows-msvc
 
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not produced" }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$($installer.Name)" | Set-Content -NoNewline "$($installer.FullName).sha256"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: BiliDesk-windows-nsis
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          name: BiliDesk-windows-nsis-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sha256

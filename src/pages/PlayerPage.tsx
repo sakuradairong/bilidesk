@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { Settings2, Volume2 } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   archiveTriple,
@@ -60,6 +61,7 @@ export function PlayerPage() {
   const [area, setArea] = useState(String(danmakuArea));
   const [tripled, setTripled] = useState(false);
   const [savedLater, setSavedLater] = useState(false);
+  const [danmakuPanelOpen, setDanmakuPanelOpen] = useState(false);
   const [countdown, setCountdown] = useState<{
     left: number;
     label: string;
@@ -107,6 +109,7 @@ export function PlayerPage() {
   useEffect(() => {
     setTripled(false);
     setSavedLater(false);
+    setDanmakuPanelOpen(false);
     setCountdown(null);
     endingRef.current = false;
   }, [bvid, session?.cid]);
@@ -226,6 +229,11 @@ export function PlayerPage() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (event.code === "Escape" && danmakuPanelOpen) {
+        event.preventDefault();
+        setDanmakuPanelOpen(false);
+        return;
+      }
       if (isHotkeyIgnored(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
@@ -248,7 +256,7 @@ export function PlayerPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [danmakuPanelOpen]);
 
   useEffect(() => {
     if (!bvid) return;
@@ -478,123 +486,177 @@ export function PlayerPage() {
             {error}
           </p>
         ) : null}
-        <footer>
-          <button
-            className="ghost-btn"
-            onClick={() => void playerTogglePause()}
-          >
-            {progress.paused ? "播放" : "暂停"}
-          </button>
-          <span className="time-label">
-            {formatDuration(progress.time)} /{" "}
-            {formatDuration(progress.duration)}
-          </span>
-          <input
-            className="progress"
-            type="range"
-            min={0}
-            max={Math.max(progress.duration, 1)}
-            step={0.1}
-            value={progress.time}
-            aria-label="进度"
-            onChange={(e) => void playerSeek(Number(e.target.value))}
-          />
-          <input
-            type="range"
-            min={0}
-            max={130}
-            value={progress.volume}
-            aria-label="音量"
-            onChange={(e) => void playerSetVolume(Number(e.target.value))}
-          />
-          <label className="speed-slider" title="播放倍速">
+        <footer className="player-controls">
+          <div className="player-progress-row">
+            <button
+              className="ghost-btn"
+              onClick={() => void playerTogglePause()}
+            >
+              {progress.paused ? "播放" : "暂停"}
+            </button>
+            <span className="time-label">
+              {formatDuration(progress.time)} /{" "}
+              {formatDuration(progress.duration)}
+            </span>
             <input
+              className="progress"
               type="range"
-              min={SPEED_MIN}
-              max={SPEED_MAX}
+              min={0}
+              max={Math.max(progress.duration, 1)}
               step={0.1}
-              value={speed}
-              aria-label="播放倍速"
-              onChange={(e) => void changeSpeed(Number(e.target.value))}
+              value={progress.time}
+              aria-label="进度"
+              onChange={(e) => void playerSeek(Number(e.target.value))}
             />
-            <span>{speed.toFixed(1)}x</span>
-          </label>
-          <select
-            value={session?.cid ?? ""}
-            aria-label="分P"
-            onChange={(e) => void changePage(Number(e.target.value))}
-          >
-            {(session?.pages ?? []).map((page) => (
-              <option key={page.cid} value={page.cid}>
-                P{page.page} {page.part}
-              </option>
-            ))}
-          </select>
-          <select
-            value={session?.current_quality ?? ""}
-            aria-label="清晰度"
-            onChange={(e) => void changeQuality(Number(e.target.value))}
-          >
-            {qualityOptions.map((option) => (
-              <option key={option.quality} value={option.quality}>
-                {option.desc}
-              </option>
-            ))}
-          </select>
-          <button className="ghost-btn" onClick={() => void toggleDanmaku()}>
-            弹幕 {danmaku ? "开" : "关"}
-          </button>
-          <select
-            value={density}
-            aria-label="弹幕密度"
-            onChange={(e) => {
-              setDensity(e.target.value);
-              void playerSetDanmakuPrefs({ maxRows: Number(e.target.value) });
-            }}
-          >
-            <option value="8">弹幕稀</option>
-            <option value="10">弹幕中</option>
-            <option value="16">弹幕密</option>
-          </select>
-          <select
-            value={fontSize}
-            aria-label="弹幕字号"
-            onChange={(e) => {
-              setFontSize(e.target.value);
-              void playerSetDanmakuPrefs({ fontSize: Number(e.target.value) });
-            }}
-          >
-            <option value="36">字号小</option>
-            <option value="42">字号中</option>
-            <option value="56">字号大</option>
-          </select>
-          <select
-            value={opacity}
-            aria-label="弹幕透明度"
-            onChange={(e) => {
-              setOpacity(e.target.value);
-              void playerSetDanmakuPrefs({ opacity: Number(e.target.value) });
-            }}
-          >
-            <option value="1">不透明</option>
-            <option value="0.75">透明 75%</option>
-            <option value="0.5">半透明</option>
-          </select>
-          <select
-            value={area}
-            aria-label="弹幕显示区域"
-            onChange={(e) => {
-              setArea(e.target.value);
-              void playerSetDanmakuPrefs({
-                displayArea: Number(e.target.value),
-              });
-            }}
-          >
-            <option value="1">全屏</option>
-            <option value="0.5">半屏</option>
-            <option value="0.25">顶部 1/4</option>
-          </select>
-          <span className="player-hint">弹幕样式对下一个视频生效</span>
+          </div>
+          <div className="player-actions-row">
+            <label className="player-compact-slider" title="音量">
+              <Volume2 className="size-4" aria-hidden="true" />
+              <input
+                type="range"
+                min={0}
+                max={130}
+                value={progress.volume}
+                aria-label="音量"
+                onChange={(e) => void playerSetVolume(Number(e.target.value))}
+              />
+              <span>{progress.volume}</span>
+            </label>
+            <label className="player-compact-slider" title="播放倍速">
+              <span className="player-control-label">倍速</span>
+              <input
+                type="range"
+                min={SPEED_MIN}
+                max={SPEED_MAX}
+                step={0.1}
+                value={speed}
+                aria-label="播放倍速"
+                onChange={(e) => void changeSpeed(Number(e.target.value))}
+              />
+              <span>{speed.toFixed(1)}x</span>
+            </label>
+            <select
+              value={session?.cid ?? ""}
+              aria-label="分P"
+              onChange={(e) => void changePage(Number(e.target.value))}
+            >
+              {(session?.pages ?? []).map((page) => (
+                <option key={page.cid} value={page.cid}>
+                  P{page.page} {page.part}
+                </option>
+              ))}
+            </select>
+            <select
+              value={session?.current_quality ?? ""}
+              aria-label="清晰度"
+              onChange={(e) => void changeQuality(Number(e.target.value))}
+            >
+              {qualityOptions.map((option) => (
+                <option key={option.quality} value={option.quality}>
+                  {option.desc}
+                </option>
+              ))}
+            </select>
+            <button className="ghost-btn" onClick={() => void toggleDanmaku()}>
+              弹幕 {danmaku ? "开" : "关"}
+            </button>
+            <div className="player-settings-menu">
+              <button
+                type="button"
+                className="ghost-btn player-settings-btn"
+                aria-expanded={danmakuPanelOpen}
+                aria-controls="player-danmaku-settings"
+                onClick={() => setDanmakuPanelOpen((open) => !open)}
+              >
+                  <Settings2 className="size-4" aria-hidden="true" />
+                  弹幕设置
+              </button>
+              {danmakuPanelOpen ? (
+              <div
+                id="player-danmaku-settings"
+                className="player-danmaku-panel"
+                role="dialog"
+                aria-label="弹幕设置"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setDanmakuPanelOpen(false);
+                }}
+              >
+                <div className="player-panel-heading">
+                  <strong>弹幕设置</strong>
+                  <span>对下一个视频生效</span>
+                </div>
+                <label>
+                  <span>密度</span>
+                  <select
+                    value={density}
+                    aria-label="弹幕密度"
+                    onChange={(e) => {
+                      setDensity(e.target.value);
+                      void playerSetDanmakuPrefs({
+                        maxRows: Number(e.target.value),
+                      });
+                    }}
+                  >
+                    <option value="8">稀</option>
+                    <option value="10">中</option>
+                    <option value="16">密</option>
+                  </select>
+                </label>
+                <label>
+                  <span>字号</span>
+                  <select
+                    value={fontSize}
+                    aria-label="弹幕字号"
+                    onChange={(e) => {
+                      setFontSize(e.target.value);
+                      void playerSetDanmakuPrefs({
+                        fontSize: Number(e.target.value),
+                      });
+                    }}
+                  >
+                    <option value="36">小</option>
+                    <option value="42">中</option>
+                    <option value="56">大</option>
+                  </select>
+                </label>
+                <label>
+                  <span>透明度</span>
+                  <select
+                    value={opacity}
+                    aria-label="弹幕透明度"
+                    onChange={(e) => {
+                      setOpacity(e.target.value);
+                      void playerSetDanmakuPrefs({
+                        opacity: Number(e.target.value),
+                      });
+                    }}
+                  >
+                    <option value="1">不透明</option>
+                    <option value="0.75">75%</option>
+                    <option value="0.5">半透明</option>
+                  </select>
+                </label>
+                <label>
+                  <span>显示区域</span>
+                  <select
+                    value={area}
+                    aria-label="弹幕显示区域"
+                    onChange={(e) => {
+                      setArea(e.target.value);
+                      void playerSetDanmakuPrefs({
+                        displayArea: Number(e.target.value),
+                      });
+                    }}
+                  >
+                    <option value="1">全屏</option>
+                    <option value="0.5">半屏</option>
+                    <option value="0.25">顶部 1/4</option>
+                  </select>
+                </label>
+              </div>
+              ) : null}
+            </div>
+          </div>
         </footer>
       </div>
     </>

@@ -14,6 +14,19 @@ export default defineConfig(async () => ({
     },
   },
   clearScreen: false,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@radix-ui") || id.includes("radix-ui")) {
+            return "ui-vendor";
+          }
+          return "vendor";
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

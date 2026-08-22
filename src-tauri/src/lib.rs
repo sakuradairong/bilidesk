@@ -53,6 +53,7 @@ pub fn run() {
             commands::feed_selected,
             commands::feed_search,
             commands::feed_popular,
+            commands::feed_ranking,
             commands::feed_region,
             commands::fav_folders,
             commands::fav_resource_list,
