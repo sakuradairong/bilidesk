@@ -5,15 +5,12 @@ import {
   ChevronUp,
   CircleDollarSign,
   Clock3,
-  Home,
   MessageCircle,
-  Radio,
   Share2,
   Sparkles,
   Star,
   ThumbsDown,
   ThumbsUp,
-  UserRound,
 } from "lucide-react";
 import {
   archiveCoin,
@@ -57,7 +54,6 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 export function FeaturedPage() {
   const navigate = useNavigate();
   const loginOpen = useAuthStore((s) => s.loginOpen);
-  const profile = useAuthStore((s) => s.profile);
   const onNeedLogin = () => useAuthStore.getState().setLoginOpen(true);
   const defaults = useSettingsStore.getState();
   const [items, setItems] = useState<VideoCard[]>([]);
@@ -560,36 +556,6 @@ export function FeaturedPage() {
     <div
       className={`featured-page${session ? " is-playing" : ""}${commentsOpen ? " comments-open" : ""}`}
     >
-      <nav className="featured-sidebar" aria-label="精选导航">
-        <img src="/bilidesk-icon.png" alt="BiliDesk" />
-        <button type="button" onClick={() => navigate("/")}>
-          <Home aria-hidden="true" />
-          <span>首页</span>
-        </button>
-        <button type="button" className="is-active" aria-current="page">
-          <Sparkles aria-hidden="true" />
-          <span>精选</span>
-        </button>
-        <button type="button" onClick={() => navigate("/?tab=dynamic")}>
-          <Radio aria-hidden="true" />
-          <span>动态</span>
-        </button>
-        <button
-          type="button"
-          className="featured-sidebar-account"
-          onClick={() => {
-            if (profile?.mid) navigate(`/space/${profile.mid}`);
-            else onNeedLogin();
-          }}
-        >
-          {profile?.face ? (
-            <img src={mediaSrc(profile.face)} alt="" />
-          ) : (
-            <UserRound aria-hidden="true" />
-          )}
-          <span>我的</span>
-        </button>
-      </nav>
       <div
         className="featured-stage"
         ref={stageRef}

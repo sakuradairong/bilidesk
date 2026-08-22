@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="74" y1="52" x2="438" y2="462" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F16C80"/>
+      <stop offset="0.52" stop-color="#CC3E67"/>
+      <stop offset="1" stop-color="#8F214F"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="130" y1="84" x2="368" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.25"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="18" y="18" width="476" height="476" rx="116" fill="url(#bg)"/>
+  <rect x="28" y="28" width="456" height="456" rx="106" fill="none" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="8"/>
+  <path d="M64 160C105 78 182 38 279 38H378C436 38 474 70 486 122V74C486 45 467 26 438 26H128C92 26 64 54 64 90V160Z" fill="url(#shine)"/>
+
+  <path
+    fill="#FFF9F7"
+    fill-rule="evenodd"
+    d="M139 102H278C360 102 407 143 407 205C407 245 386 276 348 292C395 308 420 344 420 390C420 468 363 510 274 510H139V102ZM222 166V258H270C306 258 326 241 326 212C326 182 305 166 267 166H222ZM222 324V444H278C319 444 340 424 340 385C340 345 317 324 274 324H222Z"
+    transform="translate(0 -50)"
+  />
+
+  <path d="M252 158L305 204L252 250V158Z" fill="#B62D5A"/>
+  <path d="M252 319L311 370L252 421V319Z" fill="#B62D5A"/>
+</svg>
