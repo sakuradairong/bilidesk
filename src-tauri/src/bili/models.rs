@@ -119,14 +119,6 @@ pub struct HistoryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlayerProgress {
-    pub time: f64,
-    pub duration: f64,
-    pub paused: bool,
-    pub volume: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommentItem {
     pub rpid: i64,
     pub mid: i64,

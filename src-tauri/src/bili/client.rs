@@ -932,7 +932,7 @@ fn parse_dash(data: &Value) -> Vec<StreamChoice> {
             audio_url: audio.clone(),
         });
     }
-    videos.sort_by(|a, b| b.quality.cmp(&a.quality));
+    videos.sort_by_key(|choice| std::cmp::Reverse(choice.quality));
     videos
 }
 

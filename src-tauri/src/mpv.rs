@@ -334,10 +334,8 @@ fn event_loop(
                 }
             }
             MPV_EVENT_END_FILE => handle_end_file(event, app),
-            MPV_EVENT_PROPERTY_CHANGE => {
-                if apply_property(event, &mut progress) {
-                    let _ = app.emit("player-progress", progress.clone());
-                }
+            MPV_EVENT_PROPERTY_CHANGE if apply_property(event, &mut progress) => {
+                let _ = app.emit("player-progress", progress.clone());
             }
             _ => {}
         }
