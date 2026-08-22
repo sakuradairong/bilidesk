@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { feedSearch, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
@@ -13,47 +13,36 @@ export function SearchPage() {
   const [items, setItems] = useState<VideoCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     if (!keyword) {
       setItems([]);
       setError("");
+      setLoading(false);
       return;
     }
     setLoading(true);
     setError("");
     try {
       const result = await feedSearch(keyword, 1);
+      if (id !== requestId.current) return;
       setItems(result.items);
     } catch (err) {
+      if (id !== requestId.current) return;
       setError(toAppError(err).message);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [keyword]);
 
   useEffect(() => {
-    if (!keyword) {
-      setItems([]);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    feedSearch(keyword, 1)
-      .then((result) => {
-        if (!cancelled) setItems(result.items);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(toAppError(err).message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    void load();
     return () => {
-      cancelled = true;
+      requestId.current += 1;
     };
-  }, [keyword]);
+  }, [load]);
 
   return (
     <div className="flex flex-col gap-4">

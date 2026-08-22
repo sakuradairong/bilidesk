@@ -7,31 +7,46 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useSettingsStore } from "@/stores/settings";
+import { ACCENTS, useSettingsStore } from "@/stores/settings";
 import type { ThemeMode } from "@/types";
+import { cn } from "@/lib/utils";
 
 export function SettingsPage() {
   const theme = useSettingsStore((s) => s.theme);
+  const accent = useSettingsStore((s) => s.accent);
   const danmakuEnabled = useSettingsStore((s) => s.danmakuEnabled);
   const danmakuFontSize = useSettingsStore((s) => s.danmakuFontSize);
   const danmakuMaxRows = useSettingsStore((s) => s.danmakuMaxRows);
+  const danmakuOpacity = useSettingsStore((s) => s.danmakuOpacity);
+  const danmakuArea = useSettingsStore((s) => s.danmakuArea);
+  const danmakuBold = useSettingsStore((s) => s.danmakuBold);
   const defaultVolume = useSettingsStore((s) => s.defaultVolume);
   const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
+  const autoPlayNext = useSettingsStore((s) => s.autoPlayNext);
+  const resumePosition = useSettingsStore((s) => s.resumePosition);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const setAccent = useSettingsStore((s) => s.setAccent);
   const setKey = useSettingsStore((s) => s.setKey);
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">设置</h1>
-        <p className="text-sm text-muted-foreground">主题、弹幕与播放默认值会写入本地数据库</p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
+          设置
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          主题、弹幕与播放默认值会写入本地数据库
+        </p>
       </div>
 
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
         <h2 className="text-sm font-semibold">外观</h2>
         <div className="flex items-center justify-between gap-4">
           <Label htmlFor="theme">主题</Label>
-          <Select value={theme} onValueChange={(v) => void setTheme(v as ThemeMode)}>
+          <Select
+            value={theme}
+            onValueChange={(v) => void setTheme(v as ThemeMode)}
+          >
             <SelectTrigger id="theme" className="w-40">
               <SelectValue />
             </SelectTrigger>
@@ -42,6 +57,27 @@ export function SettingsPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center justify-between gap-4">
+          <Label>主题色</Label>
+          <div className="flex gap-2">
+            {ACCENTS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                title={item.label}
+                aria-label={item.label}
+                aria-pressed={accent === item.key}
+                onClick={() => void setAccent(item.key)}
+                className={cn(
+                  "size-7 rounded-full transition-transform hover:scale-110",
+                  accent === item.key &&
+                    "ring-2 ring-ring ring-offset-2 ring-offset-card",
+                )}
+                style={{ background: item.color }}
+              />
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
@@ -51,7 +87,9 @@ export function SettingsPage() {
           <Switch
             id="dm-on"
             checked={danmakuEnabled}
-            onCheckedChange={(checked) => void setKey("danmaku_enabled", checked ? "true" : "false")}
+            onCheckedChange={(checked) =>
+              void setKey("danmaku_enabled", checked ? "true" : "false")
+            }
           />
         </div>
         <div className="flex items-center justify-between gap-4">
@@ -86,6 +124,51 @@ export function SettingsPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="dm-opacity">透明度</Label>
+          <Select
+            value={String(danmakuOpacity)}
+            onValueChange={(v) => void setKey("danmaku_opacity", v)}
+          >
+            <SelectTrigger id="dm-opacity" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">不透明</SelectItem>
+              <SelectItem value="0.75">75%</SelectItem>
+              <SelectItem value="0.5">半透明</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="dm-area">显示区域</Label>
+          <Select
+            value={String(danmakuArea)}
+            onValueChange={(v) => void setKey("danmaku_area", v)}
+          >
+            <SelectTrigger id="dm-area" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">全屏</SelectItem>
+              <SelectItem value="0.5">半屏</SelectItem>
+              <SelectItem value="0.25">顶部 1/4</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="dm-bold">字体加粗</Label>
+          <Switch
+            id="dm-bold"
+            checked={danmakuBold}
+            onCheckedChange={(checked) =>
+              void setKey("danmaku_bold", checked ? "true" : "false")
+            }
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          弹幕样式对下一个打开的视频生效
+        </p>
       </section>
 
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
@@ -122,6 +205,36 @@ export function SettingsPage() {
               <SelectItem value="2">2x</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label htmlFor="auto-next">自动连播</Label>
+            <p className="text-xs text-muted-foreground">
+              播完自动播放下一P或相关推荐
+            </p>
+          </div>
+          <Switch
+            id="auto-next"
+            checked={autoPlayNext}
+            onCheckedChange={(checked) =>
+              void setKey("auto_play_next", checked ? "true" : "false")
+            }
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label htmlFor="resume">断点续播</Label>
+            <p className="text-xs text-muted-foreground">
+              从上次离开的位置继续（本地保存）
+            </p>
+          </div>
+          <Switch
+            id="resume"
+            checked={resumePosition}
+            onCheckedChange={(checked) =>
+              void setKey("resume_position", checked ? "true" : "false")
+            }
+          />
         </div>
       </section>
     </div>

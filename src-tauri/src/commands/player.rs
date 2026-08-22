@@ -1,5 +1,5 @@
 use crate::app_error::{AppError, AppResult};
-use crate::bili::models::{HistoryItem, PlaySession, QualityOption};
+use crate::bili::models::{HistoryItem, PlayProgressRecord, PlaySession, QualityOption};
 use crate::commands::{AppState, PlayerScope};
 use crate::player;
 use serde::Deserialize;
@@ -191,24 +191,71 @@ pub fn player_set_danmaku(state: State<'_, AppState>, enabled: bool) -> AppResul
 pub struct DanmakuPrefs {
     pub font_size: Option<u32>,
     pub max_rows: Option<usize>,
+    pub opacity: Option<f64>,
+    /// 滚动/顶部弹幕占用屏幕高度比例 0.25~1.0
+    pub display_area: Option<f64>,
+    pub bold: Option<bool>,
 }
 
 #[tauri::command]
-pub fn player_set_danmaku_prefs(
-    state: State<'_, AppState>,
-    prefs: DanmakuPrefs,
-) -> AppResult<()> {
+pub fn player_set_danmaku_prefs(state: State<'_, AppState>, prefs: DanmakuPrefs) -> AppResult<()> {
     let mut opts = state
         .danmaku_opts
         .lock()
         .map_err(|e| AppError::message(e.to_string()))?;
+    let mut persist: Vec<(&str, String)> = Vec::new();
     if let Some(size) = prefs.font_size {
         opts.font_size = size.clamp(28, 72);
+        persist.push(("danmaku_font_size", opts.font_size.to_string()));
     }
     if let Some(rows) = prefs.max_rows {
         opts.max_rows = rows.clamp(4, 20);
+        persist.push(("danmaku_max_rows", opts.max_rows.to_string()));
+    }
+    if let Some(opacity) = prefs.opacity {
+        opts.opacity = opacity.clamp(0.1, 1.0);
+        persist.push(("danmaku_opacity", format!("{:.2}", opts.opacity)));
+    }
+    if let Some(area) = prefs.display_area {
+        opts.display_area = area.clamp(0.25, 1.0);
+        persist.push(("danmaku_area", format!("{:.2}", opts.display_area)));
+    }
+    if let Some(bold) = prefs.bold {
+        opts.bold = bold;
+        persist.push(("danmaku_bold", if bold { "true" } else { "false" }.into()));
+    }
+    drop(opts);
+    if !persist.is_empty() {
+        state.with_storage(|storage| {
+            for (key, value) in persist {
+                storage.set_setting(key, &value)?;
+            }
+            Ok(())
+        })?;
     }
     Ok(())
+}
+
+/// 读取断点续播位置
+#[tauri::command]
+pub fn player_progress_get(
+    state: State<'_, AppState>,
+    bvid: String,
+    cid: i64,
+) -> AppResult<Option<PlayProgressRecord>> {
+    state.with_storage(|storage| Ok(storage.load_progress(&bvid, cid)?))
+}
+
+/// 保存播放进度（看完自动清除）
+#[tauri::command]
+pub fn player_progress_save(
+    state: State<'_, AppState>,
+    bvid: String,
+    cid: i64,
+    position: f64,
+    duration: f64,
+) -> AppResult<()> {
+    state.with_storage(|storage| Ok(storage.save_progress(&bvid, cid, position, duration)?))
 }
 
 #[derive(Debug, Deserialize)]

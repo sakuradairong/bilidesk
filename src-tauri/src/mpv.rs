@@ -2,6 +2,8 @@ use super::bili::error::{BiliError, BiliResult};
 use super::player::PlayerProgress;
 use libloading::{Library, Symbol};
 use std::ffi::{c_char, c_void, CStr, CString};
+#[cfg(windows)]
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -211,6 +213,8 @@ fn run_inner(
     app: &AppHandle,
     ready: &Sender<Result<(), String>>,
 ) -> BiliResult<()> {
+    #[cfg(windows)]
+    prepend_dll_dir(&playback.dll);
     let lib = unsafe { Library::new(&playback.dll) }.map_err(|err| {
         BiliError::msg(format!(
             "无法加载 libmpv ({path}): {err}",
@@ -396,4 +400,17 @@ fn apply_property(event: &MpvEvent, progress: &mut PlayerProgress) -> bool {
         }
         _ => false,
     }
+}
+
+#[cfg(windows)]
+fn prepend_dll_dir(dll: &Path) {
+    let Some(dir) = dll.parent().and_then(Path::to_str) else {
+        return;
+    };
+    let mut path = String::from(dir);
+    path.push(';');
+    if let Ok(existing) = std::env::var("PATH") {
+        path.push_str(&existing);
+    }
+    std::env::set_var("PATH", path);
 }

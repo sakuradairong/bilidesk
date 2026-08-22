@@ -26,6 +26,7 @@ export type VideoCard = {
   aid?: number;
   cid?: number | null;
   owner_face?: string;
+  mid?: number;
 };
 
 export type SearchResult = {
@@ -50,6 +51,8 @@ export type VideoDetail = {
   duration: number;
   pages: VideoPage[];
   owner_face?: string;
+  owner_mid?: number;
+  related?: VideoCard[];
   season_title?: string;
   like?: number;
   coin?: number;
@@ -107,6 +110,69 @@ export type CommentItem = {
 export type CommentPage = {
   items: CommentItem[];
   all_count: number;
+};
+
+export type FavFolder = {
+  id: number;
+  title: string;
+};
+
+export type TripleResult = {
+  like: boolean;
+  coin: boolean;
+  fav: boolean;
+};
+
+export type WatchLaterItem = {
+  bvid: string;
+  aid: number;
+  title: string;
+  cover: string;
+  owner: string;
+  duration: number;
+  progress: number;
+  add_time: number;
+};
+
+export type UserSpace = {
+  mid: number;
+  name: string;
+  face: string;
+  sign: string;
+  level: number;
+  fans: number;
+  archive_count: number;
+  following: boolean;
+};
+
+export type UserVideoPage = {
+  items: VideoCard[];
+  page: number;
+  total: number;
+};
+
+export type FavResourcePage = {
+  items: VideoCard[];
+  page: number;
+  total: number;
+  has_more: boolean;
+};
+
+export type DynamicCard = {
+  dynamic_id: string;
+  card: VideoCard;
+  author_mid: number;
+};
+
+export type DynamicFeedPage = {
+  items: DynamicCard[];
+  offset: string;
+  has_more: boolean;
+};
+
+export type PlayProgressRecord = {
+  position: number;
+  duration: number;
 };
 
 export type ThemeMode = "light" | "dark" | "system";

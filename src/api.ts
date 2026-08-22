@@ -3,14 +3,22 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ArchiveRelation,
   CommentPage,
+  DynamicFeedPage,
+  FavFolder,
+  FavResourcePage,
   HistoryItem,
+  PlayProgressRecord,
   PlaySession,
   Profile,
   QrPoll,
   QrStart,
   SearchResult,
+  TripleResult,
+  UserSpace,
+  UserVideoPage,
   VideoCard,
   VideoDetail,
+  WatchLaterItem,
 } from "./types";
 
 export type AppErrorPayload = {
@@ -40,10 +48,16 @@ export function toAppError(err: unknown): AppError {
       return new AppError("internal", payload.error);
     }
   }
-  return new AppError("internal", err instanceof Error ? err.message : String(err));
+  return new AppError(
+    "internal",
+    err instanceof Error ? err.message : String(err),
+  );
 }
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function call<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   try {
     return await invoke<T>(cmd, args);
   } catch (err) {
@@ -71,12 +85,41 @@ export async function feedRecommend(freshIdx = 1): Promise<VideoCard[]> {
   return call("feed_recommend", { freshIdx });
 }
 
-export async function feedSelected(freshIdx = 1, freshType = 0): Promise<VideoCard[]> {
+export async function feedSelected(
+  freshIdx = 1,
+  freshType = 0,
+): Promise<VideoCard[]> {
   return call("feed_selected", { freshIdx, freshType });
 }
 
-export async function feedSearch(keyword: string, page = 1): Promise<SearchResult> {
+export async function feedSearch(
+  keyword: string,
+  page = 1,
+): Promise<SearchResult> {
   return call("feed_search", { keyword, page });
+}
+
+export async function feedPopular(page = 1): Promise<VideoCard[]> {
+  return call("feed_popular", { page });
+}
+
+export async function feedRegion(rid: number, page = 1): Promise<VideoCard[]> {
+  return call("feed_region", { rid, page });
+}
+
+export async function favFolders(): Promise<FavFolder[]> {
+  return call("fav_folders");
+}
+
+export async function favResourceList(
+  mediaId?: number,
+  page = 1,
+): Promise<FavResourcePage> {
+  return call("fav_resource_list", { mediaId, page });
+}
+
+export async function dynamicFeed(offset?: string): Promise<DynamicFeedPage> {
+  return call("dynamic_feed", { offset });
 }
 
 export async function videoView(bvid: string): Promise<VideoDetail> {
@@ -95,7 +138,10 @@ export async function archiveLike(aid: number, unlike = false): Promise<void> {
   return call("archive_like", { aid, unlike });
 }
 
-export async function archiveDislike(aid: number, cancel = false): Promise<void> {
+export async function archiveDislike(
+  aid: number,
+  cancel = false,
+): Promise<void> {
   return call("archive_dislike", { aid, cancel });
 }
 
@@ -105,6 +151,41 @@ export async function archiveCoin(aid: number): Promise<void> {
 
 export async function archiveFav(aid: number): Promise<void> {
   return call("archive_fav", { aid });
+}
+
+export async function archiveTriple(aid: number): Promise<TripleResult> {
+  return call("archive_triple", { aid });
+}
+
+export async function watchlaterList(): Promise<WatchLaterItem[]> {
+  return call("watchlater_list");
+}
+
+export async function watchlaterSave(aid: number): Promise<void> {
+  return call("watchlater_save", { aid });
+}
+
+export async function watchlaterRemove(aid: number): Promise<void> {
+  return call("watchlater_remove", { aid });
+}
+
+export async function watchlaterClear(): Promise<void> {
+  return call("watchlater_clear");
+}
+
+export async function userCard(mid: number): Promise<UserSpace> {
+  return call("user_card", { mid });
+}
+
+export async function userVideos(
+  mid: number,
+  page = 1,
+): Promise<UserVideoPage> {
+  return call("user_videos", { mid, page });
+}
+
+export async function followMod(mid: number, follow: boolean): Promise<void> {
+  return call("follow_mod", { mid, follow });
 }
 
 export async function danmakuSend(
@@ -121,7 +202,11 @@ export async function replyList(aid: number): Promise<CommentPage> {
   return call("reply_list", { aid });
 }
 
-export async function replyAdd(aid: number, message: string, parent?: number): Promise<void> {
+export async function replyAdd(
+  aid: number,
+  message: string,
+  parent?: number,
+): Promise<void> {
   return call("reply_add", { aid, message, parent });
 }
 
@@ -138,7 +223,9 @@ export async function playerOpenBackdrop(
   cid?: number,
   quality?: number,
 ): Promise<PlaySession> {
-  return call("player_open", { req: { bvid, cid, quality, scope: "featured" } });
+  return call("player_open", {
+    req: { bvid, cid, quality, scope: "featured" },
+  });
 }
 
 export async function playerStop(): Promise<void> {
@@ -169,10 +256,38 @@ export async function playerSetDanmaku(enabled: boolean): Promise<void> {
   return call("player_set_danmaku", { enabled });
 }
 
-export async function playerSetDanmakuPrefs(fontSize?: number, maxRows?: number): Promise<void> {
+export async function playerSetDanmakuPrefs(prefs: {
+  fontSize?: number;
+  maxRows?: number;
+  opacity?: number;
+  displayArea?: number;
+  bold?: boolean;
+}): Promise<void> {
   return call("player_set_danmaku_prefs", {
-    prefs: { font_size: fontSize, max_rows: maxRows },
+    prefs: {
+      font_size: prefs.fontSize,
+      max_rows: prefs.maxRows,
+      opacity: prefs.opacity,
+      display_area: prefs.displayArea,
+      bold: prefs.bold,
+    },
   });
+}
+
+export async function playerProgressGet(
+  bvid: string,
+  cid: number,
+): Promise<PlayProgressRecord | null> {
+  return call("player_progress_get", { bvid, cid });
+}
+
+export async function playerProgressSave(
+  bvid: string,
+  cid: number,
+  position: number,
+  duration: number,
+): Promise<void> {
+  return call("player_progress_save", { bvid, cid, position, duration });
 }
 
 export async function playerSetBounds(rect: {

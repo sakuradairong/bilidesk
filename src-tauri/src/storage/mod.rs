@@ -1,5 +1,5 @@
 use crate::bili::error::{BiliError, BiliResult};
-use crate::bili::models::HistoryItem;
+use crate::bili::models::{HistoryItem, PlayProgressRecord};
 use crate::bili::session;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS play_progress (
+  bvid TEXT NOT NULL,
+  cid INTEGER NOT NULL,
+  position REAL NOT NULL,
+  duration REAL NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (bvid, cid)
+);
 "#;
 
 pub struct Storage {
@@ -49,10 +58,6 @@ impl Storage {
         storage.migrate_legacy_history()?;
         storage.ensure_default_settings()?;
         Ok(storage)
-    }
-
-    pub fn data_dir(&self) -> &Path {
-        &self.data_dir
     }
 
     fn migrated_path(&self) -> PathBuf {
@@ -240,6 +245,82 @@ impl Storage {
         Ok(items)
     }
 
+    /// 保存播放进度；接近播完（剩余<15秒）视为看完并删除记录
+    pub fn save_progress(
+        &self,
+        bvid: &str,
+        cid: i64,
+        position: f64,
+        duration: f64,
+    ) -> BiliResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        if position < 5.0 || duration <= 0.0 {
+            return Ok(());
+        }
+        if position >= duration - 15.0 {
+            conn.execute(
+                "DELETE FROM play_progress WHERE bvid = ?1 AND cid = ?2",
+                params![bvid, cid],
+            )
+            .map_err(|e| BiliError::msg(e.to_string()))?;
+            return Ok(());
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO play_progress (bvid, cid, position, duration, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(bvid, cid) DO UPDATE SET
+               position=excluded.position,
+               duration=excluded.duration,
+               updated_at=excluded.updated_at",
+            params![bvid, cid, position, duration, now],
+        )
+        .map_err(|e| BiliError::msg(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM play_progress WHERE bvid NOT IN (
+               SELECT bvid FROM play_progress ORDER BY updated_at DESC LIMIT 200
+             )",
+            [],
+        )
+        .map_err(|e| BiliError::msg(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn load_progress(&self, bvid: &str, cid: i64) -> BiliResult<Option<PlayProgressRecord>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        conn.query_row(
+            "SELECT position, duration FROM play_progress WHERE bvid = ?1 AND cid = ?2",
+            params![bvid, cid],
+            |row| {
+                Ok(PlayProgressRecord {
+                    position: row.get(0)?,
+                    duration: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| BiliError::msg(e.to_string()))
+    }
+
+    #[cfg(test)]
+    fn progress_count(&self) -> BiliResult<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| BiliError::msg("数据库锁失败"))?;
+        conn.query_row("SELECT COUNT(*) FROM play_progress", [], |row| row.get(0))
+            .map_err(|e| BiliError::msg(e.to_string()))
+    }
+
     pub fn get_setting(&self, key: &str) -> BiliResult<Option<String>> {
         let conn = self
             .conn
@@ -277,7 +358,9 @@ impl Storage {
             .prepare("SELECT key, value FROM settings")
             .map_err(|e| BiliError::msg(e.to_string()))?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|e| BiliError::msg(e.to_string()))?;
         let mut map = HashMap::new();
         for row in rows {
@@ -349,6 +432,22 @@ mod tests {
         let items = storage.list_history().unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].bvid, "BV1yy");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn progress_roundtrip_and_completion_cleanup() {
+        let dir = temp_dir();
+        let storage = Storage::open(&dir).unwrap();
+        storage.save_progress("BV1p", 1, 120.0, 600.0).unwrap();
+        let record = storage.load_progress("BV1p", 1).unwrap();
+        assert_eq!(record.as_ref().unwrap().position, 120.0);
+        // 播完后（剩余 <15s）记录被清除
+        storage.save_progress("BV1p", 1, 590.0, 600.0).unwrap();
+        assert!(storage.load_progress("BV1p", 1).unwrap().is_none());
+        // 太短的位置不保存
+        storage.save_progress("BV1p", 2, 3.0, 600.0).unwrap();
+        assert_eq!(storage.progress_count().unwrap(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 }

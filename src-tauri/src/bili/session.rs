@@ -1,4 +1,5 @@
 use super::error::BiliResult;
+#[cfg(test)]
 use super::models::HistoryItem;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -99,14 +100,7 @@ pub fn history_path(data_dir: &Path) -> PathBuf {
     data_dir.join("history.json")
 }
 
-pub fn load_history(data_dir: &Path) -> BiliResult<Vec<HistoryItem>> {
-    let path = history_path(data_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    Ok(serde_json::from_slice(&fs::read(path)?)?)
-}
-
+#[cfg(test)]
 pub fn save_history(data_dir: &Path, items: &[HistoryItem]) -> BiliResult<()> {
     fs::create_dir_all(data_dir)?;
     fs::write(history_path(data_dir), serde_json::to_vec_pretty(items)?)?;

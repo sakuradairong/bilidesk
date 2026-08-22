@@ -6,6 +6,7 @@ import {
   archiveFav,
   archiveLike,
   archiveRelation,
+  archiveTriple,
   danmakuSend,
   feedSelected,
   playerOpenBackdrop,
@@ -19,6 +20,7 @@ import {
   replyAdd,
   replyList,
   videoView,
+  watchlaterSave,
   toAppError,
 } from "@/api";
 import { formatDuration } from "@/components/VideoCard";
@@ -35,7 +37,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { isHotkeyIgnored } from "@/lib/hotkeys";
 import { useNavigate } from "react-router-dom";
 
-const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
 export function FeaturedPage() {
   const navigate = useNavigate();
@@ -60,6 +62,7 @@ export function FeaturedPage() {
   const [coined, setCoined] = useState(false);
   const [faved, setFaved] = useState(false);
   const [disliked, setDisliked] = useState(false);
+  const [savedLater, setSavedLater] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [commentCount, setCommentCount] = useState(0);
@@ -257,6 +260,7 @@ export function FeaturedPage() {
       setCoined(false);
       setFaved(false);
       setDisliked(false);
+      setSavedLater(false);
       setCommentsOpen(false);
       setError("");
       const nextSession = await playerOpenBackdrop(
@@ -388,6 +392,47 @@ export function FeaturedPage() {
     }
   }
 
+  async function sendTriple() {
+    const aid = detail?.aid;
+    if (!aid || (liked && coined && faved)) return;
+    try {
+      const result = await archiveTriple(aid);
+      setLiked(result.like);
+      setCoined(result.coin);
+      setFaved(result.fav);
+      if (result.like) {
+        setDetail((prev) =>
+          prev ? { ...prev, like: (prev.like ?? 0) + (liked ? 0 : 1) } : prev,
+        );
+      }
+      if (result.coin) {
+        setDetail((prev) =>
+          prev ? { ...prev, coin: (prev.coin ?? 0) + (coined ? 0 : 1) } : prev,
+        );
+      }
+      if (result.fav) {
+        setDetail((prev) =>
+          prev
+            ? { ...prev, favorite: (prev.favorite ?? 0) + (faved ? 0 : 1) }
+            : prev,
+        );
+      }
+    } catch (err) {
+      handleInteractError(err);
+    }
+  }
+
+  async function saveWatchLater() {
+    const aid = detail?.aid;
+    if (!aid || savedLater) return;
+    try {
+      await watchlaterSave(aid);
+      setSavedLater(true);
+    } catch (err) {
+      handleInteractError(err);
+    }
+  }
+
   async function share() {
     const bvid = session?.bvid ?? items[index]?.bvid;
     if (!bvid) return;
@@ -514,6 +559,11 @@ export function FeaturedPage() {
         </div>
         <div className="featured-actions">
           <ActionButton
+            label="三连"
+            active={liked && coined && faved}
+            onClick={() => void sendTriple()}
+          />
+          <ActionButton
             label="赞"
             active={liked}
             count={detail?.like ?? 0}
@@ -542,8 +592,14 @@ export function FeaturedPage() {
             onClick={() => void share()}
           />
           <ActionButton
+            label="稍后"
+            active={savedLater}
+            onClick={() => void saveWatchLater()}
+          />
+          <ActionButton
             label="评"
             active={commentsOpen}
+            expanded={commentsOpen}
             count={commentCount}
             onClick={() => void openComments()}
           />
@@ -571,6 +627,7 @@ export function FeaturedPage() {
           <div className="featured-comment-form">
             <input
               value={commentText}
+              aria-label="发表评论"
               placeholder="说点什么"
               onChange={(e) => setCommentText(e.target.value)}
               onKeyDown={(e) => {
@@ -599,7 +656,17 @@ export function FeaturedPage() {
             <div className="featured-avatar" />
           )}
           <div>
-            <div className="featured-up">{owner}</div>
+            <button
+              type="button"
+              className="featured-up"
+              onClick={() => {
+                const mid = detail?.owner_mid;
+                if (mid) navigate(`/space/${mid}`);
+              }}
+              title="查看 UP 主空间"
+            >
+              {owner}
+            </button>
             <div className="featured-title">{title}</div>
             {season ? <div className="featured-season">{season}</div> : null}
           </div>
@@ -622,6 +689,7 @@ export function FeaturedPage() {
             max={Math.max(progress.duration, 1)}
             step={0.1}
             value={progress.time}
+            aria-label="播放进度"
             onChange={(e) => void playerSeek(Number(e.target.value))}
           />
           <input
@@ -629,11 +697,13 @@ export function FeaturedPage() {
             min={0}
             max={130}
             value={progress.volume}
-            onChange={(e) => void playerSetVolume(Number(e.target.value))}
+            aria-label="音量"
             title="音量"
+            onChange={(e) => void playerSetVolume(Number(e.target.value))}
           />
           <select
             value={session?.current_quality ?? ""}
+            aria-label="清晰度"
             onChange={(e) => void changeQuality(Number(e.target.value))}
           >
             {(session?.qualities ?? []).map((option) => (
@@ -644,6 +714,7 @@ export function FeaturedPage() {
           </select>
           <select
             value={String(speed)}
+            aria-label="播放倍速"
             onChange={(e) => void changeSpeed(Number(e.target.value))}
           >
             {SPEEDS.map((item) => (
@@ -679,11 +750,13 @@ function ActionButton({
   label,
   count,
   active,
+  expanded,
   onClick,
 }: {
   label: string;
   count?: number;
   active?: boolean;
+  expanded?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -691,6 +764,7 @@ function ActionButton({
       type="button"
       className={`featured-action ${active ? "active" : ""}`}
       aria-pressed={!!active}
+      aria-expanded={expanded}
       onClick={onClick}
     >
       <span>{label}</span>

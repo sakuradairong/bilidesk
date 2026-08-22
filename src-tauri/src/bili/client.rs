@@ -19,6 +19,14 @@ const VIEW: &str = "https://api.bilibili.com/x/web-interface/view";
 const PLAYURL: &str = "https://api.bilibili.com/x/player/wbi/playurl";
 const DANMAKU: &str = "https://api.bilibili.com/x/v1/dm/list.so";
 const ARCHIVE_RELATION: &str = "https://api.bilibili.com/x/web-interface/archive/relation";
+const TRIPLE: &str = "https://api.bilibili.com/x/web-interface/archive/like/triple";
+const TOVIEW: &str = "https://api.bilibili.com/x/v2/history/toview";
+const USER_CARD: &str = "https://api.bilibili.com/x/web-interface/card";
+const USER_ARC: &str = "https://api.bilibili.com/x/space/wbi/arc/search";
+const POPULAR: &str = "https://api.bilibili.com/x/web-interface/popular";
+const REGION_DYNAMIC: &str = "https://api.bilibili.com/x/web-interface/dynamic/region";
+const FAV_RESOURCE: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
+const DYNAMIC_FEED: &str = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
 
 #[derive(Clone)]
 pub struct BiliClient {
@@ -107,9 +115,7 @@ impl BiliClient {
             .session
             .lock()
             .map_err(|_| BiliError::msg("会话锁失败"))?;
-        session
-            .csrf()
-            .ok_or_else(|| BiliError::msg("未登录"))
+        session.csrf().ok_or_else(|| BiliError::msg("未登录"))
     }
 
     fn logged_mid(&self) -> BiliResult<i64> {
@@ -356,7 +362,19 @@ impl BiliClient {
             duration: data["duration"].as_i64().unwrap_or(0),
             pages,
             owner_face: https_url(data["owner"]["face"].as_str().unwrap_or_default()),
-            season_title: data["ugc_season"]["title"].as_str().unwrap_or("").to_string(),
+            owner_mid: data["owner"]["mid"].as_i64().unwrap_or(0),
+            related: data["related"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(parse_card)
+                .take(20)
+                .collect(),
+            season_title: data["ugc_season"]["title"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
             like: data["stat"]["like"].as_i64().unwrap_or(0),
             coin: data["stat"]["coin"].as_i64().unwrap_or(0),
             favorite: data["stat"]["favorite"].as_i64().unwrap_or(0),
@@ -498,11 +516,129 @@ impl BiliClient {
         Ok(())
     }
 
+    /// 一键三连：赞 + 1 币 + 收藏（默认收藏夹）
+    pub async fn triple(&self, aid: i64) -> BiliResult<TripleResult> {
+        let csrf = self.csrf()?;
+        let value = self
+            .post_form(TRIPLE, &[("aid", aid.to_string()), ("csrf", csrf)])
+            .await?;
+        let data = &value["data"];
+        Ok(TripleResult {
+            like: value_truthy(&data["like"]),
+            coin: value_truthy(&data["coin"]),
+            fav: value_truthy(&data["fav"]),
+        })
+    }
+
+    pub async fn watchlater_list(&self) -> BiliResult<Vec<WatchLaterItem>> {
+        let value = self.get_json(TOVIEW).await?;
+        check_code(&value)?;
+        Ok(value["data"]["list"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|item| {
+                Some(WatchLaterItem {
+                    bvid: item["bvid"].as_str()?.to_string(),
+                    aid: item["aid"].as_i64().unwrap_or(0),
+                    title: item["title"].as_str().unwrap_or_default().to_string(),
+                    cover: https_url(item["pic"].as_str().unwrap_or_default()),
+                    owner: item["owner"]["name"].as_str().unwrap_or("").to_string(),
+                    duration: item["duration"].as_i64().unwrap_or(0),
+                    progress: item["progress"].as_i64().unwrap_or(0),
+                    add_time: item["add_at"].as_i64().unwrap_or(0),
+                })
+            })
+            .collect())
+    }
+
+    pub async fn watchlater_save(&self, aid: i64) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(
+            &format!("{TOVIEW}/add"),
+            &[("aid", aid.to_string()), ("csrf", csrf)],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn watchlater_remove(&self, aid: i64) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(
+            &format!("{TOVIEW}/del"),
+            &[("aid", aid.to_string()), ("csrf", csrf)],
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn watchlater_clear(&self) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(&format!("{TOVIEW}/clear"), &[("csrf", csrf)])
+            .await?;
+        Ok(())
+    }
+
+    /// 用户名片：空间信息 + 是否已关注（合并两个状态，一次请求）
+    pub async fn user_card(&self, mid: i64) -> BiliResult<UserSpace> {
+        let value = self.get_json(&format!("{USER_CARD}?mid={mid}")).await?;
+        check_code(&value)?;
+        let data = &value["data"];
+        let card = &data["card"];
+        Ok(UserSpace {
+            mid: card["mid"].as_i64().unwrap_or(mid),
+            name: card["name"].as_str().unwrap_or("未知用户").to_string(),
+            face: https_url(card["face"].as_str().unwrap_or_default()),
+            sign: card["sign"].as_str().unwrap_or("").to_string(),
+            level: card["level_info"]["current_level"].as_i64().unwrap_or(0) as i32,
+            fans: card["fans"].as_i64().unwrap_or(0),
+            archive_count: card["archive_count"].as_i64().unwrap_or(0),
+            following: value_truthy(&data["following"]),
+        })
+    }
+
+    pub async fn user_videos(&self, mid: i64, page: u32) -> BiliResult<UserVideoPage> {
+        let mut params = BTreeMap::new();
+        params.insert("mid".into(), mid.to_string());
+        params.insert("pn".into(), page.max(1).to_string());
+        params.insert("ps".into(), "30".into());
+        params.insert("order".into(), "pubdate".into());
+        let value = self.wbi_query(USER_ARC, params).await?;
+        let data = &value["data"];
+        let items = data["list"]["vlist"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(parse_card)
+            .collect::<Vec<_>>();
+        Ok(UserVideoPage {
+            total: data["page"]["count"].as_i64().unwrap_or(items.len() as i64),
+            page: page.max(1),
+            items,
+        })
+    }
+
+    /// 关注/取关：act 1 关注，2 取关
+    pub async fn follow_mod(&self, mid: i64, follow: bool) -> BiliResult<()> {
+        let csrf = self.csrf()?;
+        self.post_form(
+            "https://api.bilibili.com/x/relation/modify",
+            &[
+                ("fid", mid.to_string()),
+                ("act", if follow { "1" } else { "2" }.into()),
+                ("re_src", "11".into()),
+                ("csrf", csrf),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn fav_folders(&self) -> BiliResult<Vec<FavFolder>> {
         let mid = self.logged_mid()?;
-        let url = format!(
-            "https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={mid}"
-        );
+        let url = format!("https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={mid}");
         let value = self.get_json(&url).await?;
         check_code(&value)?;
         Ok(parse_fav_folders(&value))
@@ -512,13 +648,12 @@ impl BiliClient {
         let csrf = self.csrf()?;
         let folder = match media_id {
             Some(id) => id,
-            None => {
-                self.fav_folders()
-                    .await?
-                    .first()
-                    .map(|f| f.id)
-                    .ok_or_else(|| BiliError::msg("没有可用收藏夹"))?
-            }
+            None => self
+                .fav_folders()
+                .await?
+                .first()
+                .map(|f| f.id)
+                .ok_or_else(|| BiliError::msg("没有可用收藏夹"))?,
         };
         self.post_form(
             "https://api.bilibili.com/x/v3/fav/resource/deal",
@@ -591,6 +726,96 @@ impl BiliClient {
             .await?;
         Ok(())
     }
+
+    /// 热门视频排行榜
+    pub async fn popular(&self, page: u32) -> BiliResult<Vec<VideoCard>> {
+        let url = format!("{POPULAR}?ps=20&pn={}", page.max(1));
+        let value = self.get_json(&url).await?;
+        check_code(&value)?;
+        Ok(value["data"]["list"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(parse_card)
+            .collect())
+    }
+
+    /// 分区最新稿件
+    pub async fn region_dynamic(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
+        let url = format!("{REGION_DYNAMIC}?rid={rid}&ps=30&pn={}", page.max(1));
+        let value = self.get_json(&url).await?;
+        check_code(&value)?;
+        Ok(value["data"]["archives"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(parse_card)
+            .collect())
+    }
+
+    /// 收藏夹内容列表；media_id 为空时取默认收藏夹
+    pub async fn fav_resource_list(
+        &self,
+        media_id: Option<i64>,
+        page: u32,
+    ) -> BiliResult<FavResourcePage> {
+        let folder = match media_id {
+            Some(id) => id,
+            None => self
+                .fav_folders()
+                .await?
+                .first()
+                .map(|f| f.id)
+                .ok_or_else(|| BiliError::msg("没有可用收藏夹"))?,
+        };
+        let url = format!(
+            "{FAV_RESOURCE}?media_id={folder}&pn={}&ps=20&keyword=&order=mtime&type=0&tid=0&platform=web",
+            page.max(1)
+        );
+        let value = self.get_json(&url).await?;
+        check_code(&value)?;
+        let data = &value["data"];
+        let items = data["medias"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(parse_card)
+            .collect::<Vec<_>>();
+        Ok(FavResourcePage {
+            total: data["info"]["media_count"]
+                .as_i64()
+                .unwrap_or(items.len() as i64),
+            has_more: value_truthy(&data["has_more"]),
+            page: page.max(1),
+            items,
+        })
+    }
+
+    /// 动态首页（仅保留视频类动态）
+    pub async fn dynamic_feed(&self, offset: Option<&str>) -> BiliResult<DynamicFeedPage> {
+        let mut params = BTreeMap::new();
+        params.insert("type".into(), "all".into());
+        if let Some(cursor) = offset.filter(|s| !s.is_empty()) {
+            params.insert("offset".into(), cursor.to_string());
+        }
+        let value = self.wbi_query(DYNAMIC_FEED, params).await?;
+        let data = &value["data"];
+        let items = data["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(parse_dynamic_card)
+            .collect::<Vec<_>>();
+        Ok(DynamicFeedPage {
+            offset: data["offset"].as_str().unwrap_or_default().to_string(),
+            has_more: value_truthy(&data["has_more"]),
+            items,
+        })
+    }
 }
 
 fn unix_ms() -> u128 {
@@ -645,7 +870,10 @@ fn parse_comments(value: &Value) -> CommentPage {
                 mid: item["mid"].as_i64().unwrap_or(0),
                 name: item["member"]["uname"].as_str().unwrap_or("").to_string(),
                 face: https_url(item["member"]["avatar"].as_str().unwrap_or_default()),
-                message: item["content"]["message"].as_str().unwrap_or("").to_string(),
+                message: item["content"]["message"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
                 like: item["like"].as_i64().unwrap_or(0),
             })
         })
@@ -753,6 +981,7 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
                 .or_else(|| value["face"].as_str())
                 .unwrap_or_default(),
         ),
+        mid: value["owner"]["mid"].as_i64().unwrap_or(0),
     })
 }
 
@@ -775,6 +1004,52 @@ fn parse_search_card(value: &Value) -> Option<VideoCard> {
         return None;
     }
     parse_card(value)
+}
+
+fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
+    let dynamic_id = value["id_str"].as_str().unwrap_or_default().to_string();
+    let mut author_mid = 0_i64;
+    let mut author_name = String::new();
+    let mut author_face = String::new();
+    for module in value["modules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+    {
+        if let Some(author) = module["module_author"].as_object() {
+            author_mid = author.get("mid").and_then(|v| v.as_i64()).unwrap_or(0);
+            author_name = author
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            author_face = https_url(
+                author
+                    .get("face")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+            );
+            break;
+        }
+    }
+    let archive = &value["modules"].as_array().and_then(|arr| {
+        arr.iter()
+            .find(|m| m["module_dynamic"]["major"]["archive"].is_object())
+    })?["module_dynamic"]["major"]["archive"];
+    let mut card = parse_card(archive)?;
+    if card.owner.is_empty() {
+        card.owner = author_name;
+    }
+    if card.owner_face.is_empty() {
+        card.owner_face = author_face;
+    }
+    card.mid = author_mid;
+    Some(DynamicCard {
+        dynamic_id,
+        card,
+        author_mid,
+    })
 }
 
 fn parse_duration(value: &Value) -> i64 {

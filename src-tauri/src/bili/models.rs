@@ -35,6 +35,9 @@ pub struct VideoCard {
     pub cid: Option<i64>,
     #[serde(default)]
     pub owner_face: String,
+    /// 作者 mid（动态卡片/空间跳转用，普通列表可能为 0）
+    #[serde(default)]
+    pub mid: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +66,10 @@ pub struct VideoDetail {
     pub pages: Vec<VideoPage>,
     #[serde(default)]
     pub owner_face: String,
+    #[serde(default)]
+    pub owner_mid: i64,
+    #[serde(default)]
+    pub related: Vec<VideoCard>,
     #[serde(default)]
     pub season_title: String,
     #[serde(default)]
@@ -139,6 +146,72 @@ pub struct CommentPage {
 pub struct FavFolder {
     pub id: i64,
     pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TripleResult {
+    pub like: bool,
+    pub coin: bool,
+    pub fav: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchLaterItem {
+    pub bvid: String,
+    pub aid: i64,
+    pub title: String,
+    pub cover: String,
+    pub owner: String,
+    pub duration: i64,
+    pub progress: i64,
+    pub add_time: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserSpace {
+    pub mid: i64,
+    pub name: String,
+    pub face: String,
+    pub sign: String,
+    pub level: i32,
+    pub fans: i64,
+    pub archive_count: i64,
+    pub following: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserVideoPage {
+    pub items: Vec<VideoCard>,
+    pub page: u32,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavResourcePage {
+    pub items: Vec<VideoCard>,
+    pub page: u32,
+    pub total: i64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicCard {
+    pub dynamic_id: String,
+    pub card: VideoCard,
+    pub author_mid: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicFeedPage {
+    pub items: Vec<DynamicCard>,
+    pub offset: String,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayProgressRecord {
+    pub position: f64,
+    pub duration: f64,
 }
 
 #[derive(Debug, Clone)]

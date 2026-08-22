@@ -1,9 +1,9 @@
 mod app_error;
 mod bili;
 mod commands;
-mod storage;
 mod mpv;
 mod player;
+mod storage;
 
 use commands::AppState;
 use tauri::Manager;
@@ -52,6 +52,11 @@ pub fn run() {
             commands::feed_recommend,
             commands::feed_selected,
             commands::feed_search,
+            commands::feed_popular,
+            commands::feed_region,
+            commands::fav_folders,
+            commands::fav_resource_list,
+            commands::dynamic_feed,
             commands::video_view,
             commands::history_list,
             commands::archive_relation,
@@ -59,6 +64,14 @@ pub fn run() {
             commands::archive_dislike,
             commands::archive_coin,
             commands::archive_fav,
+            commands::archive_triple,
+            commands::watchlater_list,
+            commands::watchlater_save,
+            commands::watchlater_remove,
+            commands::watchlater_clear,
+            commands::user_card,
+            commands::user_videos,
+            commands::follow_mod,
             commands::danmaku_send,
             commands::reply_list,
             commands::reply_add,
@@ -71,6 +84,8 @@ pub fn run() {
             commands::player_set_danmaku,
             commands::player_set_danmaku_prefs,
             commands::player_set_bounds,
+            commands::player_progress_get,
+            commands::player_progress_save,
             commands::settings_get_all,
             commands::settings_set,
         ])

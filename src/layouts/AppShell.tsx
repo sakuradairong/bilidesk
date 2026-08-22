@@ -1,6 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Compass, History, Settings, Sparkles } from "lucide-react";
+import {
+  Compass,
+  History,
+  Settings,
+  Sparkles,
+  Star,
+  Clock,
+} from "lucide-react";
 import { LoginModal } from "@/components/LoginModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -16,8 +23,10 @@ import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { to: "/", label: "推荐", icon: Compass, end: true },
+  { to: "/", label: "首页", icon: Compass, end: true },
   { to: "/featured", label: "精选", icon: Sparkles },
+  { to: "/favorites", label: "收藏", icon: Star },
+  { to: "/watchlater", label: "稍后再看", icon: Clock },
   { to: "/history", label: "历史", icon: History },
   { to: "/settings", label: "设置", icon: Settings },
 ];
@@ -46,7 +55,9 @@ export function AppShell() {
     <div className="app-shell grid h-full min-h-0 grid-cols-[220px_1fr]">
       <aside className="app-shell-aside flex min-h-0 flex-col gap-2 border-r border-border/80 bg-card/70 px-3 py-5 backdrop-blur-md">
         <div className="mb-3 px-3">
-          <div className="font-display text-xl font-bold tracking-tight">BiliDesk</div>
+          <div className="font-display text-xl font-bold tracking-tight">
+            BiliDesk
+          </div>
           <div className="text-xs text-muted-foreground">非官方 · 个人自用</div>
         </div>
         <nav className="flex flex-col gap-1">
@@ -72,7 +83,10 @@ export function AppShell() {
       </aside>
       <div className="app-shell-main flex min-h-0 min-w-0 flex-col">
         <header className="app-shell-header flex items-center gap-3 border-b border-border/80 bg-background/70 px-5 py-3 backdrop-blur-md">
-          <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={onSearch}>
+          <form
+            className="flex min-w-0 flex-1 items-center gap-2"
+            onSubmit={onSearch}
+          >
             <Input
               id="app-search"
               value={query}
@@ -93,11 +107,20 @@ export function AppShell() {
                     <AvatarImage src={mediaSrc(profile.face)} alt="" />
                     <AvatarFallback>{profile.name.slice(0, 1)}</AvatarFallback>
                   </Avatar>
-                  <span className="max-w-28 truncate text-sm">{profile.name}</span>
+                  <span className="max-w-28 truncate text-sm">
+                    {profile.name}
+                  </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => void logout()}>退出登录</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => navigate(`/space/${profile.mid}`)}
+                >
+                  我的空间
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void logout()}>
+                  退出登录
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (

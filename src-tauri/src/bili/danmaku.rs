@@ -13,6 +13,11 @@ pub struct DanmakuOptions {
     pub font_size: u32,
     pub max_rows: usize,
     pub scroll_seconds: f64,
+    /// 整体不透明度 0.1~1.0
+    pub opacity: f64,
+    /// 滚动/顶部弹幕占用屏幕高度比例 0.25~1.0
+    pub display_area: f64,
+    pub bold: bool,
 }
 
 impl Default for DanmakuOptions {
@@ -21,6 +26,9 @@ impl Default for DanmakuOptions {
             font_size: 48,
             max_rows: 12,
             scroll_seconds: 8.0,
+            opacity: 1.0,
+            display_area: 1.0,
+            bold: true,
         }
     }
 }
@@ -60,8 +68,13 @@ pub fn to_ass(items: &[Danmaku], opts: &DanmakuOptions) -> String {
     let play_x = 1920.0;
     let play_y = 1080.0;
     let row_h = opts.font_size as f64 + 8.0;
-    let mut scroll_until = vec![0.0_f64; opts.max_rows.max(1)];
-    let mut top_until = vec![0.0_f64; opts.max_rows.max(1)];
+    // 显示区域限制滚动/顶部弹幕的可占高度，底部弹幕不受影响
+    let area_height = play_y * opts.display_area.clamp(0.1, 1.0);
+    let area_rows = ((area_height / row_h).floor() as usize)
+        .max(1)
+        .min(opts.max_rows.max(1));
+    let mut scroll_until = vec![0.0_f64; area_rows];
+    let mut top_until = vec![0.0_f64; area_rows];
     let mut bottom_until = vec![0.0_f64; opts.max_rows.max(1)];
 
     let mut events = String::new();
@@ -128,14 +141,17 @@ ScaledBorderAndShadow: yes\n\
 \n\
 [V4+ Styles]\n\
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
-Style: Scroll,Microsoft YaHei,{font},&H00FFFFFF,&H000000FF,&H64000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,0,8,0,0,0,1\n\
-Style: Top,Microsoft YaHei,{font},&H00FFFFFF,&H000000FF,&H64000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,0,8,0,0,0,1\n\
-Style: Bottom,Microsoft YaHei,{font},&H00FFFFFF,&H000000FF,&H64000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,0,2,0,0,0,1\n\
+Style: Scroll,Microsoft YaHei,{font},{style_color},&H000000FF,{style_color},{shadow_color},{bold},0,0,0,100,100,0,0,1,2,0,8,0,0,0,1\n\
+Style: Top,Microsoft YaHei,{font},{style_color},&H000000FF,{style_color},{shadow_color},{bold},0,0,0,100,100,0,0,1,2,0,8,0,0,0,1\n\
+Style: Bottom,Microsoft YaHei,{font},{style_color},&H000000FF,{style_color},{shadow_color},{bold},0,0,0,100,100,0,0,1,2,0,2,0,0,0,1\n\
 \n\
 [Events]\n\
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
 {events}",
-        font = opts.font_size
+        font = opts.font_size,
+        style_color = ass_style_color(opts.opacity),
+        shadow_color = ass_style_shadow(opts.opacity),
+        bold = if opts.bold { -1 } else { 0 },
     )
 }
 
@@ -166,7 +182,19 @@ fn ass_color(rgb: u32) -> String {
     let r = (rgb >> 16) & 0xFF;
     let g = (rgb >> 8) & 0xFF;
     let b = rgb & 0xFF;
-    format!("&H00{b:02X}{g:02X}{r:02X}")
+    format!("&H{b:02X}{g:02X}{r:02X}")
+}
+
+/// Style 行主色（含 alpha，00=不透明）
+fn ass_style_color(opacity: f64) -> String {
+    let alpha = ((1.0 - opacity.clamp(0.1, 1.0)) * 255.0).round() as u32;
+    format!("&H{alpha:02X}FFFFFF")
+}
+
+/// Style 行阴影色（原为 0x64，随透明度同向叠加）
+fn ass_style_shadow(opacity: f64) -> String {
+    let extra = ((1.0 - opacity.clamp(0.1, 1.0)) * 96.0).round() as u32;
+    format!("&H{:02X}000000", 0x64 + extra)
 }
 
 fn escape_ass(text: &str) -> String {
@@ -230,9 +258,54 @@ mod tests {
             max_rows: 4,
             font_size: 48,
             scroll_seconds: 8.0,
+            opacity: 1.0,
+            display_area: 1.0,
+            bold: true,
         };
         let ass = to_ass(&crowded, &opts);
         let dialogues = ass.lines().filter(|l| l.starts_with("Dialogue:")).count();
         assert_eq!(dialogues, 4);
+    }
+
+    #[test]
+    fn display_area_shrinks_scroll_rows() {
+        let crowded: Vec<Danmaku> = (0..40)
+            .map(|i| Danmaku {
+                time: 1.0,
+                mode: 1,
+                size: 25,
+                color: 16777215,
+                text: format!("d{i}"),
+            })
+            .collect();
+        // 1/4 屏（270px）每行 56px 只容 4 行，即便 max_rows=12
+        let opts = DanmakuOptions {
+            max_rows: 12,
+            font_size: 48,
+            scroll_seconds: 8.0,
+            opacity: 1.0,
+            display_area: 0.25,
+            bold: true,
+        };
+        let ass = to_ass(&crowded, &opts);
+        let dialogues = ass.lines().filter(|l| l.starts_with("Dialogue:")).count();
+        assert_eq!(dialogues, 4);
+    }
+
+    #[test]
+    fn opacity_and_bold_write_into_styles() {
+        let items = parse_xml(SAMPLE);
+        let opts = DanmakuOptions {
+            font_size: 48,
+            max_rows: 12,
+            scroll_seconds: 8.0,
+            opacity: 0.5,
+            display_area: 1.0,
+            bold: false,
+        };
+        let ass = to_ass(&items, &opts);
+        // 0.5 不透明度 -> alpha=0x80
+        assert!(ass.contains("&H80FFFFFF"));
+        assert!(ass.contains(",0,0,0,100,100"));
     }
 }

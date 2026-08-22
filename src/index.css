@@ -72,6 +72,40 @@
   --ring: oklch(0.72 0.12 8);
 }
 
+/* BiliOne 风格可选主题色（html[data-accent] 切换，.dark 同元素叠加） */
+[data-accent="cyan"] {
+  --primary: oklch(0.58 0.11 215);
+  --ring: oklch(0.58 0.11 215);
+}
+.dark[data-accent="cyan"] {
+  --primary: oklch(0.78 0.1 215);
+  --ring: oklch(0.78 0.1 215);
+}
+[data-accent="blue"] {
+  --primary: oklch(0.5 0.16 262);
+  --ring: oklch(0.5 0.16 262);
+}
+.dark[data-accent="blue"] {
+  --primary: oklch(0.7 0.13 262);
+  --ring: oklch(0.7 0.13 262);
+}
+[data-accent="purple"] {
+  --primary: oklch(0.5 0.16 300);
+  --ring: oklch(0.5 0.16 300);
+}
+.dark[data-accent="purple"] {
+  --primary: oklch(0.7 0.13 300);
+  --ring: oklch(0.7 0.13 300);
+}
+[data-accent="green"] {
+  --primary: oklch(0.55 0.13 150);
+  --ring: oklch(0.55 0.13 150);
+}
+.dark[data-accent="green"] {
+  --primary: oklch(0.72 0.12 150);
+  --ring: oklch(0.72 0.12 150);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -120,11 +154,76 @@
   color: oklch(0.95 0.01 80);
 }
 .player-page footer { margin-top: auto; }
+/* 首页胶囊 Tab（BiliOne 风格） */
+.pill-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--card) 78%, transparent);
+  backdrop-filter: blur(12px);
+}
+.pill-tab {
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 6px 16px;
+  border-radius: 9999px;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.pill-tab:hover { color: var(--foreground); background: color-mix(in oklab, var(--muted) 60%, transparent); }
+.pill-tab.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 500;
+}
+/* 播放页画面外封面渐变（BiliOne 风格） */
+.player-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(64px) brightness(0.32) saturate(1.25);
+  transform: scale(1.25);
+}
+.player-page { position: relative; z-index: 1; }
+.player-page header,
+.player-page footer {
+  background: oklch(0.16 0.015 260 / 0.55);
+  backdrop-filter: blur(16px);
+}
+.player-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+}
+.player-countdown button {
+  border: none;
+  background: rgb(0 0 0 / 0.25);
+  color: inherit;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.player-hint { font-size: 12px; opacity: 0.6; }
 .player-stage {
   flex: 1;
   cursor: pointer;
   min-height: 120px;
-  background: transparent;
+  /* mpv 子窗口创建前的加载窗口期保持不透明，避免透明主窗口透视到桌面 */
+  background: #000;
 }
 .player-title {
   flex: 1;
@@ -271,7 +370,17 @@ html.featured-mode .app-shell-aside a[aria-current="page"] {
   object-fit: cover;
   background: oklch(0.3 0.02 260);
 }
-.featured-up { font-size: 13px; opacity: 0.85; }
+.featured-up {
+  font-size: 13px;
+  opacity: 0.85;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.featured-up:hover { opacity: 1; text-decoration: underline; }
 .featured-title { font-size: 16px; font-weight: 600; }
 .featured-season { font-size: 12px; opacity: 0.7; }
 .featured-bar {

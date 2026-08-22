@@ -118,10 +118,7 @@ impl AppState {
             .cancel(scope))
     }
 
-    pub(crate) fn with_storage<T>(
-        &self,
-        f: impl FnOnce(&Storage) -> AppResult<T>,
-    ) -> AppResult<T> {
+    pub(crate) fn with_storage<T>(&self, f: impl FnOnce(&Storage) -> AppResult<T>) -> AppResult<T> {
         let guard = self
             .storage
             .lock()
@@ -135,13 +132,13 @@ impl AppState {
 
 pub fn init_data_dir(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    state.bili.set_data_dir(dir.clone()).map_err(|e| e.to_string())?;
+    state
+        .bili
+        .set_data_dir(dir.clone())
+        .map_err(|e| e.to_string())?;
     let storage = Storage::open(&dir).map_err(|e| e.to_string())?;
     if let Ok(Some(v)) = storage.get_setting("danmaku_enabled") {
-        *state
-            .danmaku_on
-            .lock()
-            .map_err(|e| e.to_string())? = v != "false";
+        *state.danmaku_on.lock().map_err(|e| e.to_string())? = v != "false";
     }
     {
         let mut opts = state.danmaku_opts.lock().map_err(|e| e.to_string())?;
@@ -154,6 +151,19 @@ pub fn init_data_dir(app: &AppHandle, state: &AppState) -> Result<(), String> {
             if let Ok(n) = v.parse::<usize>() {
                 opts.max_rows = n.clamp(4, 20);
             }
+        }
+        if let Ok(Some(v)) = storage.get_setting("danmaku_opacity") {
+            if let Ok(n) = v.parse::<f64>() {
+                opts.opacity = n.clamp(0.1, 1.0);
+            }
+        }
+        if let Ok(Some(v)) = storage.get_setting("danmaku_area") {
+            if let Ok(n) = v.parse::<f64>() {
+                opts.display_area = n.clamp(0.25, 1.0);
+            }
+        }
+        if let Ok(Some(v)) = storage.get_setting("danmaku_bold") {
+            opts.bold = v != "false";
         }
     }
     *state.storage.lock().map_err(|e| e.to_string())? = Some(storage);

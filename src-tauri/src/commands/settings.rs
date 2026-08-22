@@ -6,11 +6,17 @@ use tauri::State;
 
 const ALLOWED_KEYS: &[&str] = &[
     "theme",
+    "accent_color",
     "danmaku_enabled",
     "danmaku_font_size",
     "danmaku_max_rows",
+    "danmaku_opacity",
+    "danmaku_area",
+    "danmaku_bold",
     "default_volume",
     "default_speed",
+    "auto_play_next",
+    "resume_position",
 ];
 
 #[tauri::command]
