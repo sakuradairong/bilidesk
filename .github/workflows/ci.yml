@@ -37,6 +37,13 @@ jobs:
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
 
+      - name: Install 7-Zip
+        run: choco install 7zip -y --no-progress
+
+      - name: Fetch pinned libmpv
+        shell: pwsh
+        run: ./scripts/fetch-mpv.ps1
+
       - run: npm ci
       - run: npm run build
       - run: npm test
