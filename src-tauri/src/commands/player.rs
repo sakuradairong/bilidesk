@@ -60,10 +60,10 @@ pub async fn player_open(
         .lock()
         .map_err(|e| AppError::message(e.to_string()))?;
     let current_play = current.clone();
-    let presentation = match scope {
-        PlayerScope::Standard => player::PlayerPresentation::Embedded,
-        PlayerScope::Featured => player::PlayerPresentation::Backdrop,
-    };
+    // Keep libmpv in a native child HWND for every player surface. The host is
+    // placed above WebView2 inside the measured stage, so the Tauri window can
+    // stay fully opaque and never reveal applications behind it.
+    let presentation = player::PlayerPresentation::Embedded;
     let window_play = window.clone();
     let app_play = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {

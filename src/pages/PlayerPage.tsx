@@ -1,6 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Settings2, Volume2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Captions,
+  Clock3,
+  Pause,
+  Play,
+  Settings2,
+  Sparkles,
+  UserRound,
+  Volume2,
+} from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   archiveTriple,
@@ -15,20 +25,27 @@ import {
   playerSetVolume,
   playerStop,
   playerTogglePause,
+  replyList,
   toAppError,
   videoView,
   watchlaterSave,
 } from "@/api";
 import { formatDuration } from "@/components/VideoCard";
-import { Button } from "@/components/ui/button";
+import { WindowTitleBar } from "@/components/WindowTitleBar";
 import { mediaSrc } from "@/media";
 import { isHotkeyIgnored } from "@/lib/hotkeys";
 import { watchBack } from "@/lib/watch";
-import type { PlaySession, PlayerProgress, VideoDetail } from "@/types";
+import type {
+  CommentItem,
+  PlaySession,
+  PlayerProgress,
+  VideoDetail,
+} from "@/types";
 import { useSettingsStore } from "@/stores/settings";
 
 const SPEED_MIN = 0.5;
 const SPEED_MAX = 3.0;
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
 export function PlayerPage() {
   const { bvid = "" } = useParams();
@@ -67,6 +84,9 @@ export function PlayerPage() {
     label: string;
   } | null>(null);
   const [error, setError] = useState("");
+  const [sideTab, setSideTab] = useState<"intro" | "comments">("intro");
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(progress);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -111,8 +131,29 @@ export function PlayerPage() {
     setSavedLater(false);
     setDanmakuPanelOpen(false);
     setCountdown(null);
+    setSideTab("intro");
+    setComments([]);
     endingRef.current = false;
   }, [bvid, session?.cid]);
+
+  useEffect(() => {
+    if (sideTab !== "comments" || !detail?.aid) return;
+    let cancelled = false;
+    setCommentsLoading(true);
+    void replyList(detail.aid)
+      .then((page) => {
+        if (!cancelled) setComments(page.items);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(toAppError(err).message);
+      })
+      .finally(() => {
+        if (!cancelled) setCommentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.aid, sideTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,7 +458,8 @@ export function PlayerPage() {
   }
 
   return (
-    <>
+    <div className="player-route-shell">
+      <WindowTitleBar />
       {detail?.cover ? (
         <div
           className="player-backdrop"
@@ -425,39 +467,39 @@ export function PlayerPage() {
         />
       ) : null}
       <div className="player-page">
-        <header>
-          <Button variant="ghost" className="text-inherit" onClick={onBack}>
-            返回
-          </Button>
-          <div className="player-title">
-            {session?.title ?? detail?.title ?? "正在打开…"}
-          </div>
+        <section className="player-main">
+        <header className="player-topbar">
           <button
-            className="ghost-btn"
-            disabled={!detail?.aid || tripled}
-            onClick={() => void sendTriple()}
+            type="button"
+            className="player-icon-button"
+            aria-label="返回"
+            title="返回"
+            onClick={onBack}
           >
-            {tripled ? "已三连" : "三连"}
+            <ArrowLeft aria-hidden="true" />
           </button>
-          <button
-            className="ghost-btn"
-            disabled={!detail?.aid || savedLater}
-            onClick={() => void saveWatchLater()}
-          >
-            {savedLater ? "已稍后再看" : "稍后再看"}
-          </button>
-          {detail?.owner_mid ? (
-            <button
-              className="ghost-btn"
-              onClick={openSpace}
-              title="查看 UP 主空间"
+          <div className="player-heading">
+            <div
+              className="player-title"
+              title={session?.title ?? detail?.title ?? "正在打开…"}
             >
-              {detail.owner}
-            </button>
-          ) : null}
-          {autoPlayNext ? (
-            <span className="player-hint">自动连播开</span>
-          ) : null}
+              {session?.title ?? detail?.title ?? "正在打开…"}
+            </div>
+            <div className="player-subtitle">
+              {detail?.owner_mid ? (
+                <button type="button" onClick={openSpace} title="查看 UP 主空间">
+                  <UserRound aria-hidden="true" />
+                  {detail.owner}
+                </button>
+              ) : (
+                <span>正在准备视频信息</span>
+              )}
+              {(session?.pages.length ?? 0) > 1 ? (
+                <span>{session?.pages.length} 个分P</span>
+              ) : null}
+              {autoPlayNext ? <span>自动连播已开启</span> : null}
+            </div>
+          </div>
           {countdown ? (
             <span className="player-countdown" role="timer">
               {countdown.left}s 后播放：{countdown.label}
@@ -466,6 +508,26 @@ export function PlayerPage() {
               </button>
             </span>
           ) : null}
+          <div className="player-top-actions">
+            <button
+              type="button"
+              className={`player-action-button${tripled ? " is-active" : ""}`}
+              disabled={!detail?.aid || tripled}
+              onClick={() => void sendTriple()}
+            >
+              <Sparkles aria-hidden="true" />
+              {tripled ? "已三连" : "三连"}
+            </button>
+            <button
+              type="button"
+              className={`player-action-button${savedLater ? " is-active" : ""}`}
+              disabled={!detail?.aid || savedLater}
+              onClick={() => void saveWatchLater()}
+            >
+              <Clock3 aria-hidden="true" />
+              {savedLater ? "已加入" : "稍后再看"}
+            </button>
+          </div>
         </header>
         <div
           className="player-stage"
@@ -487,17 +549,7 @@ export function PlayerPage() {
           </p>
         ) : null}
         <footer className="player-controls">
-          <div className="player-progress-row">
-            <button
-              className="ghost-btn"
-              onClick={() => void playerTogglePause()}
-            >
-              {progress.paused ? "播放" : "暂停"}
-            </button>
-            <span className="time-label">
-              {formatDuration(progress.time)} /{" "}
-              {formatDuration(progress.duration)}
-            </span>
+          <div className="player-timeline">
             <input
               className="progress"
               type="range"
@@ -508,62 +560,96 @@ export function PlayerPage() {
               aria-label="进度"
               onChange={(e) => void playerSeek(Number(e.target.value))}
             />
+            <span className="time-label">
+              {formatDuration(progress.time)} / {formatDuration(progress.duration)}
+            </span>
           </div>
-          <div className="player-actions-row">
-            <label className="player-compact-slider" title="音量">
-              <Volume2 className="size-4" aria-hidden="true" />
-              <input
-                type="range"
-                min={0}
-                max={130}
-                value={progress.volume}
-                aria-label="音量"
-                onChange={(e) => void playerSetVolume(Number(e.target.value))}
-              />
-              <span>{progress.volume}</span>
-            </label>
-            <label className="player-compact-slider" title="播放倍速">
-              <span className="player-control-label">倍速</span>
-              <input
-                type="range"
-                min={SPEED_MIN}
-                max={SPEED_MAX}
-                step={0.1}
-                value={speed}
-                aria-label="播放倍速"
-                onChange={(e) => void changeSpeed(Number(e.target.value))}
-              />
-              <span>{speed.toFixed(1)}x</span>
-            </label>
-            <select
-              value={session?.cid ?? ""}
-              aria-label="分P"
-              onChange={(e) => void changePage(Number(e.target.value))}
-            >
-              {(session?.pages ?? []).map((page) => (
-                <option key={page.cid} value={page.cid}>
-                  P{page.page} {page.part}
-                </option>
-              ))}
-            </select>
-            <select
-              value={session?.current_quality ?? ""}
-              aria-label="清晰度"
-              onChange={(e) => void changeQuality(Number(e.target.value))}
-            >
-              {qualityOptions.map((option) => (
-                <option key={option.quality} value={option.quality}>
-                  {option.desc}
-                </option>
-              ))}
-            </select>
-            <button className="ghost-btn" onClick={() => void toggleDanmaku()}>
-              弹幕 {danmaku ? "开" : "关"}
-            </button>
+          <div className="player-control-deck">
+            <div className="player-control-group is-primary">
+              <button
+                type="button"
+                className="player-play-button"
+                aria-label={progress.paused ? "播放" : "暂停"}
+                title={progress.paused ? "播放" : "暂停"}
+                onClick={() => void playerTogglePause()}
+              >
+                {progress.paused ? (
+                  <Play aria-hidden="true" />
+                ) : (
+                  <Pause aria-hidden="true" />
+                )}
+              </button>
+              <label className="player-volume" title="音量">
+                <Volume2 aria-hidden="true" />
+                <input
+                  type="range"
+                  min={0}
+                  max={130}
+                  value={progress.volume}
+                  aria-label="音量"
+                  onChange={(e) => void playerSetVolume(Number(e.target.value))}
+                />
+                <span>{progress.volume}</span>
+              </label>
+            </div>
+            <div className="player-control-group is-selects">
+              <label className="player-select-control">
+                <span>选集</span>
+                <select
+                  value={session?.cid ?? ""}
+                  aria-label="分P"
+                  onChange={(e) => void changePage(Number(e.target.value))}
+                >
+                  {(session?.pages ?? []).map((page) => (
+                    <option key={page.cid} value={page.cid}>
+                      P{page.page} {page.part}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="player-select-control">
+                <span>画质</span>
+                <select
+                  value={session?.current_quality ?? ""}
+                  aria-label="清晰度"
+                  onChange={(e) => void changeQuality(Number(e.target.value))}
+                >
+                  {qualityOptions.map((option) => (
+                    <option key={option.quality} value={option.quality}>
+                      {option.desc}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="player-select-control is-speed">
+                <span>倍速</span>
+                <select
+                  value={String(speed)}
+                  aria-label="播放倍速"
+                  onChange={(e) => void changeSpeed(Number(e.target.value))}
+                >
+                  {SPEED_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}x
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="player-control-group is-secondary">
+              <button
+                type="button"
+                className={`player-toggle-button${danmaku ? " is-active" : ""}`}
+                aria-pressed={danmaku}
+                onClick={() => void toggleDanmaku()}
+              >
+                <Captions aria-hidden="true" />
+                弹幕 {danmaku ? "开" : "关"}
+              </button>
             <div className="player-settings-menu">
               <button
                 type="button"
-                className="ghost-btn player-settings-btn"
+                className="player-toggle-button player-settings-btn"
                 aria-expanded={danmakuPanelOpen}
                 aria-controls="player-danmaku-settings"
                 onClick={() => setDanmakuPanelOpen((open) => !open)}
@@ -656,9 +742,137 @@ export function PlayerPage() {
               </div>
               ) : null}
             </div>
+            </div>
           </div>
         </footer>
+        </section>
+        <aside className="player-side-panel" aria-label="视频详情">
+          <div className="player-side-tabs" role="tablist" aria-label="视频信息">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sideTab === "intro"}
+              className={sideTab === "intro" ? "is-active" : ""}
+              onClick={() => setSideTab("intro")}
+            >
+              简介
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sideTab === "comments"}
+              className={sideTab === "comments" ? "is-active" : ""}
+              onClick={() => setSideTab("comments")}
+            >
+              评论 {formatMetric(detail?.reply ?? 0)}
+            </button>
+          </div>
+
+          {sideTab === "intro" ? (
+            <div className="player-side-scroll">
+              <section className="player-owner-card">
+                {detail?.owner_face ? (
+                  <img src={mediaSrc(detail.owner_face)} alt="" />
+                ) : (
+                  <div className="player-owner-placeholder">
+                    <UserRound aria-hidden="true" />
+                  </div>
+                )}
+                <div>
+                  <button type="button" onClick={openSpace}>
+                    {detail?.owner ?? "UP 主"}
+                  </button>
+                  <span>{detail?.season_title || "视频创作者"}</span>
+                </div>
+              </section>
+
+              <section className="player-intro-block">
+                <h2>{detail?.title ?? "正在加载视频信息…"}</h2>
+                <div className="player-stat-grid">
+                  <span><strong>{formatMetric(detail?.like ?? 0)}</strong>点赞</span>
+                  <span><strong>{formatMetric(detail?.coin ?? 0)}</strong>投币</span>
+                  <span><strong>{formatMetric(detail?.favorite ?? 0)}</strong>收藏</span>
+                  <span><strong>{formatMetric(detail?.share ?? 0)}</strong>分享</span>
+                </div>
+                {detail?.desc ? <p>{detail.desc}</p> : null}
+              </section>
+
+              {(session?.pages.length ?? 0) > 1 ? (
+                <section className="player-side-section">
+                  <div className="player-side-section-title">
+                    <strong>视频选集</strong>
+                    <span>{session?.pages.length} P</span>
+                  </div>
+                  <div className="player-episode-list">
+                    {session?.pages.map((page) => (
+                      <button
+                        type="button"
+                        key={page.cid}
+                        className={page.cid === session.cid ? "is-active" : ""}
+                        onClick={() => void changePage(page.cid)}
+                      >
+                        <span>P{page.page}</span>
+                        {page.part}
+                        <em>{formatDuration(page.duration)}</em>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {(detail?.related?.length ?? 0) > 0 ? (
+                <section className="player-side-section">
+                  <div className="player-side-section-title">
+                    <strong>相关推荐</strong>
+                  </div>
+                  <div className="player-related-list">
+                    {detail?.related?.slice(0, 8).map((item) => (
+                      <button
+                        type="button"
+                        key={item.bvid}
+                        onClick={() =>
+                          navigate(`/watch/${item.bvid}`, {
+                            state: { from: from ?? "/" },
+                          })
+                        }
+                      >
+                        <img src={mediaSrc(item.cover)} alt="" />
+                        <span>
+                          <strong>{item.title}</strong>
+                          <small>{item.owner} · {formatMetric(item.views)}播放</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          ) : (
+            <div className="player-side-scroll player-comment-list">
+              {commentsLoading ? <p className="player-side-status">评论加载中…</p> : null}
+              {!commentsLoading && comments.length === 0 ? (
+                <p className="player-side-status">暂时没有可显示的评论</p>
+              ) : null}
+              {comments.map((comment) => (
+                <article key={comment.rpid}>
+                  <img src={mediaSrc(comment.face)} alt="" />
+                  <div>
+                    <strong>{comment.name}</strong>
+                    <p>{comment.message}</p>
+                    <span>{formatMetric(comment.like)} 赞</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </aside>
       </div>
-    </>
+    </div>
   );
+}
+
+function formatMetric(value: number): string {
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(value >= 100_000 ? 0 : 1)}万`;
+  return String(value);
 }

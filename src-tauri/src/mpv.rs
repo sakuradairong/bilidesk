@@ -243,10 +243,16 @@ fn run_inner(
 
 fn prepare_session(api: &Api, ctx: *mut c_void, playback: &Playback) -> BiliResult<()> {
     api.set_i64(ctx, "wid", playback.wid)?;
+    // Do not inherit a machine-wide mpv.conf. Options such as video-unscaled
+    // make low-resolution Featured clips render at their source pixel size.
+    api.try_set_str(ctx, "config", "no");
     api.try_set_str(ctx, "vo", "gpu");
     api.try_set_str(ctx, "gpu-context", "d3d11");
     api.try_set_str(ctx, "gpu-api", "d3d11");
     api.try_set_str(ctx, "hwdec", "auto");
+    api.try_set_str(ctx, "video-unscaled", "no");
+    api.try_set_str(ctx, "keepaspect", "yes");
+    api.try_set_str(ctx, "video-zoom", "0");
     api.try_set_str(ctx, "keep-open", "yes");
     api.try_set_str(ctx, "osc", "no");
     api.try_set_str(ctx, "osd-level", "0");

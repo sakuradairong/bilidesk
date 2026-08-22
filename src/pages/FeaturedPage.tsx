@@ -1,5 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import {
+  ChevronDown,
+  ChevronUp,
+  CircleDollarSign,
+  Clock3,
+  Home,
+  MessageCircle,
+  Radio,
+  Share2,
+  Sparkles,
+  Star,
+  ThumbsDown,
+  ThumbsUp,
+  UserRound,
+} from "lucide-react";
 import {
   archiveCoin,
   archiveDislike,
@@ -42,6 +57,7 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 export function FeaturedPage() {
   const navigate = useNavigate();
   const loginOpen = useAuthStore((s) => s.loginOpen);
+  const profile = useAuthStore((s) => s.profile);
   const onNeedLogin = () => useAuthStore.getState().setLoginOpen(true);
   const defaults = useSettingsStore.getState();
   const [items, setItems] = useState<VideoCard[]>([]);
@@ -103,25 +119,33 @@ export function FeaturedPage() {
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
+    let frame = 0;
     const publish = () => {
       if (loginOpen) {
         void playerSetBounds({ x: -2400, y: 0, width: 16, height: 16 });
         return;
       }
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 16 || rect.height < 16) return;
       void playerSetBounds({
-        x: 0,
-        y: 0,
-        width: window.innerWidth,
-        height: window.innerHeight,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
       });
     };
-    publish();
-    const observer = new ResizeObserver(publish);
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(publish);
+    };
+    schedule();
+    const observer = new ResizeObserver(schedule);
     observer.observe(el);
-    window.addEventListener("resize", publish);
+    window.addEventListener("resize", schedule);
     return () => {
+      cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("resize", publish);
+      window.removeEventListener("resize", schedule);
     };
   }, [loginOpen, commentsOpen]);
 
@@ -536,6 +560,36 @@ export function FeaturedPage() {
     <div
       className={`featured-page${session ? " is-playing" : ""}${commentsOpen ? " comments-open" : ""}`}
     >
+      <nav className="featured-sidebar" aria-label="精选导航">
+        <img src="/bilidesk-icon.png" alt="BiliDesk" />
+        <button type="button" onClick={() => navigate("/")}>
+          <Home aria-hidden="true" />
+          <span>首页</span>
+        </button>
+        <button type="button" className="is-active" aria-current="page">
+          <Sparkles aria-hidden="true" />
+          <span>精选</span>
+        </button>
+        <button type="button" onClick={() => navigate("/?tab=dynamic")}>
+          <Radio aria-hidden="true" />
+          <span>动态</span>
+        </button>
+        <button
+          type="button"
+          className="featured-sidebar-account"
+          onClick={() => {
+            if (profile?.mid) navigate(`/space/${profile.mid}`);
+            else onNeedLogin();
+          }}
+        >
+          {profile?.face ? (
+            <img src={mediaSrc(profile.face)} alt="" />
+          ) : (
+            <UserRound aria-hidden="true" />
+          )}
+          <span>我的</span>
+        </button>
+      </nav>
       <div
         className="featured-stage"
         ref={stageRef}
@@ -546,57 +600,69 @@ export function FeaturedPage() {
           <button
             className="featured-chevron"
             disabled={index <= 0}
+            aria-label="上一条"
+            title="上一条"
             onClick={() => void playAt(indexRef.current - 1)}
           >
-            上一条
+            <ChevronUp aria-hidden="true" />
           </button>
           <button
             className="featured-chevron"
+            aria-label="下一条"
+            title="下一条"
             onClick={() => void playAt(indexRef.current + 1)}
           >
-            下一条
+            <ChevronDown aria-hidden="true" />
           </button>
         </div>
         <div className="featured-actions">
           <ActionButton
+            icon={<Sparkles aria-hidden="true" />}
             label="三连"
             active={liked && coined && faved}
             onClick={() => void sendTriple()}
           />
           <ActionButton
+            icon={<ThumbsUp aria-hidden="true" />}
             label="赞"
             active={liked}
             count={detail?.like ?? 0}
             onClick={() => void toggleLike()}
           />
           <ActionButton
+            icon={<ThumbsDown aria-hidden="true" />}
             label="不喜欢"
             active={disliked}
             onClick={() => void toggleDislike()}
           />
           <ActionButton
+            icon={<CircleDollarSign aria-hidden="true" />}
             label="币"
             active={coined}
             count={detail?.coin ?? 0}
             onClick={() => void addCoin()}
           />
           <ActionButton
+            icon={<Star aria-hidden="true" />}
             label="藏"
             active={faved}
             count={detail?.favorite ?? 0}
             onClick={() => void addFav()}
           />
           <ActionButton
+            icon={<Share2 aria-hidden="true" />}
             label="转"
             count={detail?.share ?? 0}
             onClick={() => void share()}
           />
           <ActionButton
+            icon={<Clock3 aria-hidden="true" />}
             label="稍后"
             active={savedLater}
             onClick={() => void saveWatchLater()}
           />
           <ActionButton
+            icon={<MessageCircle aria-hidden="true" />}
             label="评"
             active={commentsOpen}
             expanded={commentsOpen}
@@ -747,12 +813,14 @@ export function FeaturedPage() {
 }
 
 function ActionButton({
+  icon,
   label,
   count,
   active,
   expanded,
   onClick,
 }: {
+  icon: ReactNode;
   label: string;
   count?: number;
   active?: boolean;
@@ -767,6 +835,7 @@ function ActionButton({
       aria-expanded={expanded}
       onClick={onClick}
     >
+      {icon}
       <span>{label}</span>
       {count == null ? null : <em>{compactCount(count)}</em>}
     </button>

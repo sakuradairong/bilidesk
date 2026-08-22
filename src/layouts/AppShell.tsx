@@ -10,6 +10,7 @@ import {
   Clock,
 } from "lucide-react";
 import { LoginModal } from "@/components/LoginModal";
+import { WindowTitleBar } from "@/components/WindowTitleBar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,16 +54,9 @@ export function AppShell() {
 
   return (
     <div className="app-shell flex h-full min-h-0 flex-col">
-      <header className="app-shell-header grid grid-cols-[minmax(150px,1fr)_auto_minmax(260px,1fr)] items-center gap-4 border-b border-border/70 bg-background/78 px-5 py-3 backdrop-blur-xl">
-        <NavLink to="/" className="app-brand min-w-0" aria-label="BiliDesk 首页">
-          <span className="app-brand-mark">B</span>
-          <span className="min-w-0">
-            <strong className="block truncate text-base leading-tight">BiliDesk</strong>
-            <small className="block truncate text-[11px] text-muted-foreground">
-              非官方 · 个人自用
-            </small>
-          </span>
-        </NavLink>
+      <WindowTitleBar />
+      <header className="app-shell-header">
+        <div className="app-shell-balance" aria-hidden="true" />
 
         <nav className="app-shell-nav" aria-label="主导航">
           {nav.map((item) => (
@@ -85,7 +79,7 @@ export function AppShell() {
           ))}
         </nav>
 
-        <div className="flex min-w-0 items-center justify-end gap-2">
+        <div className="app-shell-actions">
           <form
             className="app-search flex min-w-0 flex-1 items-center"
             onSubmit={onSearch}
@@ -112,7 +106,7 @@ export function AppShell() {
           {profile ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="gap-2 px-2">
+                <Button variant="ghost" className="app-profile-button gap-2 px-2">
                   <Avatar className="size-7">
                     <AvatarImage src={mediaSrc(profile.face)} alt="" />
                     <AvatarFallback>{profile.name.slice(0, 1)}</AvatarFallback>
@@ -134,7 +128,7 @@ export function AppShell() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button className="rounded-full" onClick={() => setLoginOpen(true)}>
+            <Button className="app-login-button rounded-full" onClick={() => setLoginOpen(true)}>
               登录
             </Button>
           )}
