@@ -34,6 +34,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "BiliDesk",
+    "shortDescription": "非官方哔哩哔哩桌面客户端",
+    "longDescription": "个人自用的非官方 Windows 哔哩哔哩客户端。播放组件使用 LGPL 授权的 libmpv。",
+    "category": "Video",
+    "resources": ["vendor/mpv/libmpv-2.dll", "THIRD_PARTY.md"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      }
+    }
   }
 }
