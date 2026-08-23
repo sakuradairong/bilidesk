@@ -34,12 +34,19 @@ impl BiliError {
 }
 
 fn classify_message(text: &str, fallback: &'static str) -> &'static str {
-    if text.contains("未登录") {
+    if text.contains("未登录") || text.contains("登录过期") {
         "unauthenticated"
     } else if text.contains("风控") {
         "risk_control"
     } else if text.contains("大会员") {
         "vip_required"
+    } else if text.contains("libmpv") || text.contains("mpv-2.dll") {
+        "mpv_missing"
+    } else if text.contains("稿件不存在") || text.contains("已失效") || text.contains("啥都木有")
+    {
+        "video_unavailable"
+    } else if text.contains("过于频繁") || text.contains("限流") {
+        "rate_limited"
     } else {
         fallback
     }
@@ -74,5 +81,20 @@ mod tests {
     fn api_unauthenticated_uses_stable_code() {
         assert_eq!(BiliError::Api("未登录".into()).code(), "unauthenticated");
         assert_eq!(BiliError::msg("请求被风控").code(), "risk_control");
+    }
+
+    #[test]
+    fn classifies_player_and_content_failures() {
+        assert_eq!(BiliError::msg("未找到 libmpv-2.dll").code(), "mpv_missing");
+        assert_eq!(
+            BiliError::Api("稿件不存在或已失效 (-404)".into()).code(),
+            "video_unavailable"
+        );
+        assert_eq!(
+            BiliError::msg("操作过于频繁，请稍后再试").code(),
+            "rate_limited"
+        );
+        assert_eq!(BiliError::Network("timeout".into()).code(), "network");
+        assert_eq!(BiliError::NoPlayUrl.code(), "no_play_url");
     }
 }

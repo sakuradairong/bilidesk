@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { describeUserError } from "./lib/errors";
 import type {
   ArchiveRelation,
   CommentPage,
@@ -36,21 +37,28 @@ export class AppError extends Error {
   }
 }
 
+function withUserCopy(error: AppError): AppError {
+  return new AppError(error.code, describeUserError(error));
+}
+
 export function toAppError(err: unknown): AppError {
-  if (err instanceof AppError) return err;
-  if (typeof err === "string") return new AppError("internal", err);
+  if (err instanceof AppError) return withUserCopy(err);
+  if (typeof err === "string") {
+    return withUserCopy(new AppError("internal", err));
+  }
   if (err && typeof err === "object") {
     const payload = err as AppErrorPayload & { error?: string };
     if (payload.message) {
-      return new AppError(payload.code || "internal", payload.message);
+      return withUserCopy(
+        new AppError(payload.code || "internal", payload.message),
+      );
     }
     if (payload.error) {
-      return new AppError("internal", payload.error);
+      return withUserCopy(new AppError("internal", payload.error));
     }
   }
-  return new AppError(
-    "internal",
-    err instanceof Error ? err.message : String(err),
+  return withUserCopy(
+    new AppError("internal", err instanceof Error ? err.message : String(err)),
   );
 }
 

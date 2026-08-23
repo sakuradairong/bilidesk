@@ -11,9 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 src-tauri/target
 src-tauri/gen
 src-tauri/vendor
+src-tauri/tauri.signing.json
 
 # Editor directories and files
 .vscode/*

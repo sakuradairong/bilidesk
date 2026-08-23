@@ -1,7 +1,7 @@
 {
   "name": "bilidesk",
   "private": true,
-  "version": "0.1.1",
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run build && npm test",
+    "check:release": "node scripts/check-release-version.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

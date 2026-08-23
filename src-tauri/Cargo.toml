@@ -1,6 +1,6 @@
 [package]
 name = "bilidesk"
-version = "0.1.1"
+version = "1.0.0"
 description = "Unofficial Bilibili desktop client for personal use"
 authors = ["BiliDesk"]
 license = "MIT"

@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
   checks: write
 
 jobs:
@@ -35,7 +35,15 @@ jobs:
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
 
+      - name: Install 7-Zip
+        run: choco install 7zip -y --no-progress
+
+      - name: Fetch pinned libmpv
+        shell: pwsh
+        run: ./scripts/fetch-mpv.ps1
+
       - run: npm ci
+      - run: npm run check:release
       - run: npm run build
       - run: npm test
       - run: npm audit --audit-level=high
@@ -67,8 +75,49 @@ jobs:
 
       - run: npm ci
 
+      - name: Import Windows certificate
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            "SIGNED=false" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "WINDOWS_CERTIFICATE is not set; building an unsigned installer"
+            exit 0
+          }
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          [IO.File]::WriteAllText("certificate/certificate.b64", $env:WINDOWS_CERTIFICATE)
+          certutil -decode certificate/certificate.b64 certificate/certificate.pfx
+          Remove-Item certificate/certificate.b64 -Force
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $cert = Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          "SIGNED=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Write signing overlay
+        if: env.SIGNED == 'true'
+        shell: pwsh
+        run: |
+          $overlay = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          }
+          $overlay | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 src-tauri/tauri.signing.json
+
       - name: Build NSIS installer
-        run: npm run tauri build -- --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          if ($env:SIGNED -eq "true") {
+            npm run tauri build -- --target x86_64-pc-windows-msvc --config src-tauri/tauri.signing.json
+          } else {
+            npm run tauri build -- --target x86_64-pc-windows-msvc
+          }
 
       - name: Generate SHA-256 checksum
         shell: pwsh
@@ -77,12 +126,35 @@ jobs:
           if (-not $installer) { throw "NSIS installer was not produced" }
           $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *$($installer.Name)" | Set-Content -NoNewline "$($installer.FullName).sha256"
+          "INSTALLER_NAME=$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "COMMIT_SHA=$env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BiliDesk-windows-nsis-unsigned
+          name: BiliDesk-windows-nsis-${{ env.SIGNED == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           retention-days: 14
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sha256
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ env.SIGNED != 'true' }}
+          generate_release_notes: true
+          files: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sha256
+          body: |
+            Windows 当前用户安装包。
+
+            - 文件：`${{ env.INSTALLER_NAME }}`
+            - SHA-256：`${{ env.INSTALLER_SHA256 }}`
+            - 提交：`${{ env.COMMIT_SHA }}`
+            - 代码签名：${{ env.SIGNED == 'true' && '已使用 WINDOWS_CERTIFICATE 签名并加盖时间戳' || '未签名（未配置 WINDOWS_CERTIFICATE）。SmartScreen 可能提示。' }}
+
+            回滚：卸载当前版本后安装上一份 GitHub Release 中的安装包。登录 Cookie 与观看历史默认保留在 `%APPDATA%\com.bilidesk.desktop`，与隐私说明一致。

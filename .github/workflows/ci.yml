@@ -45,6 +45,7 @@ jobs:
         run: ./scripts/fetch-mpv.ps1
 
       - run: npm ci
+      - run: npm run check:release
       - run: npm run build
       - run: npm test
       - run: npm audit --audit-level=high
