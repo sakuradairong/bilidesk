@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseReleaseVersions } from "./check-release-version.mjs";
+import { parseReleaseVersions } from "./releaseVersions";
 
 const lfFiles = {
   packageJson: '{"version":"1.0.0"}',

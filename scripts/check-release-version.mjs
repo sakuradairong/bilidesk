@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Keep parseReleaseVersions in sync with src/lib/releaseVersions.ts.
 function normalizeNewlines(text) {
   return text.replace(/\r\n?/g, "\n");
 }
