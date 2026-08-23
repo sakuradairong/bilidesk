@@ -180,7 +180,7 @@ export function FeaturedPage() {
       else unlistenProgress = fn;
     });
     listen<string>("player-error", (event) => {
-      setError(event.payload);
+      setError(toAppError(event.payload).message);
     }).then((fn) => {
       if (cancelled) fn();
       else unlistenError = fn;

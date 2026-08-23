@@ -19,4 +19,4 @@
 - BiliDesk 不应执行来自视频标题、评论、弹幕或远程页面的脚本。
 - 图片代理只允许明确列出的哔哩哔哩图片域名。
 - 登录 Cookie 在 Windows 上使用当前用户范围的 DPAPI 加密存储。
-- 安装包在配置正式代码签名之前仍可能触发 Windows SmartScreen；不要从非项目发布渠道获取安装包。
+- 安装包在配置正式代码签名之前仍可能触发 Windows SmartScreen；不要从非项目发布渠道获取安装包。推送 `v*` 标签后，GitHub Release 会附带 SHA-256。配置 `WINDOWS_CERTIFICATE` 后安装包会签名并加盖时间戳；未配置时 Release 会标记为 prerelease。

@@ -50,9 +50,11 @@ pwsh -File scripts/fetch-mpv.ps1
 npm run tauri build
 ```
 
-产出：`src-tauri/target/release/bundle/nsis/BiliDesk_0.1.0_x64-setup.exe`（当前用户安装，默认简体中文界面，内含 `libmpv-2.dll`）。未签名，SmartScreen 可能提示。
+产出：`src-tauri/target/release/bundle/nsis/BiliDesk_1.0.0_x64-setup.exe`（当前用户安装，默认简体中文界面，内含 `libmpv-2.dll`）。未配置代码签名证书时安装包未签名，SmartScreen 可能提示。
 
-GitHub Actions：手动运行 `Windows installer` workflow，或推送 `v*` 标签，产物在 Artifact 里。
+GitHub Actions：推送 `v*` 标签（例如 `v1.0.0`）会运行 `Windows installer` workflow，把安装包和 SHA-256 发布到 GitHub Release。需要签名时，在仓库 Secrets 中配置 Base64 的 `WINDOWS_CERTIFICATE` 与 `WINDOWS_CERTIFICATE_PASSWORD`。也可手动运行该 workflow 只生成 Artifact。
+
+故障撤回：卸载当前版本后安装上一份 GitHub Release 中的安装包。登录 Cookie 与观看历史默认保留在 `%APPDATA%\com.bilidesk.desktop`，与 [PRIVACY.md](PRIVACY.md) 一致。
 
 数据目录保存加密登录 Cookie、SQLite 数据库与本地观看历史。隐私、安全、发布和捆绑组件说明见 [PRIVACY.md](PRIVACY.md)、[SECURITY.md](SECURITY.md)、[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) 与 [THIRD_PARTY.md](THIRD_PARTY.md)。设计与功能参考来源见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
 

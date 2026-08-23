@@ -11,10 +11,15 @@ import { Switch } from "@/components/ui/switch";
 import { ACCENTS, useSettingsStore } from "@/stores/settings";
 import type { ThemeMode } from "@/types";
 import { cn } from "@/lib/utils";
+import {
+  aboutBlurb,
+  APP_VERSION,
+  DATA_DIR_HINT,
+  PROJECT_URL,
+  RELEASES_URL,
+} from "@/lib/version";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, ShieldCheck } from "lucide-react";
-
-const PROJECT_URL = "https://github.com/sakuradairong/bilidesk";
 
 export function SettingsPage() {
   const theme = useSettingsStore((s) => s.theme);
@@ -249,12 +254,23 @@ export function SettingsPage() {
           <div>
             <h2 className="text-sm font-semibold">关于与隐私</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              BiliDesk 0.1.0 · 非官方客户端。登录 Cookie 使用 Windows
-              当前用户范围的 DPAPI 加密，本项目不收集遥测数据。
+              {aboutBlurb()}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              卸载不一定删除本地数据。完整清除请退出后删除 {DATA_DIR_HINT}。
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openUrl(RELEASES_URL)}
+          >
+            检查更新（{APP_VERSION}）
+            <ExternalLink aria-hidden="true" />
+          </Button>
           <Button
             type="button"
             variant="outline"

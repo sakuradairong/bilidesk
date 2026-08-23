@@ -1121,6 +1121,7 @@ fn check_code(value: &Value) -> BiliResult<()> {
         0 => Ok(()),
         -101 => Err(BiliError::msg("未登录")),
         -352 | -412 => Err(BiliError::msg("请求被风控，请稍后重试或重新登录")),
+        -404 | 62002 | 62004 | 62012 => Err(BiliError::msg("稿件不存在或已失效")),
         other => Err(BiliError::Api(
             value
                 .get("message")
