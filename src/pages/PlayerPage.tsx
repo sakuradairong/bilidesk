@@ -500,32 +500,28 @@ export function PlayerPage() {
               {autoPlayNext ? <span>自动连播已开启</span> : null}
             </div>
           </div>
-          {countdown ? (
-            <span className="player-countdown" role="timer">
-              {countdown.left}s 后播放：{countdown.label}
-              <button type="button" onClick={() => setCountdown(null)}>
-                取消
-              </button>
-            </span>
-          ) : null}
           <div className="player-top-actions">
             <button
               type="button"
               className={`player-action-button${tripled ? " is-active" : ""}`}
               disabled={!detail?.aid || tripled}
+              aria-label={tripled ? "已三连" : "三连"}
+              title={tripled ? "已三连" : "三连"}
               onClick={() => void sendTriple()}
             >
               <Sparkles aria-hidden="true" />
-              {tripled ? "已三连" : "三连"}
+              <span>{tripled ? "已三连" : "三连"}</span>
             </button>
             <button
               type="button"
               className={`player-action-button${savedLater ? " is-active" : ""}`}
               disabled={!detail?.aid || savedLater}
+              aria-label={savedLater ? "已加入稍后再看" : "稍后再看"}
+              title={savedLater ? "已加入稍后再看" : "稍后再看"}
               onClick={() => void saveWatchLater()}
             >
               <Clock3 aria-hidden="true" />
-              {savedLater ? "已加入" : "稍后再看"}
+              <span>{savedLater ? "已加入" : "稍后再看"}</span>
             </button>
           </div>
         </header>
@@ -534,19 +530,22 @@ export function PlayerPage() {
           ref={stageRef}
           onClick={() => void playerTogglePause()}
         />
-        {error ? (
-          <p
-            role="alert"
-            className="error-line"
-            style={{
-              padding: "0 16px",
-              margin: 0,
-              background: "#101216",
-              color: "#ff8f8f",
-            }}
-          >
-            {error}
-          </p>
+        {error || countdown ? (
+          <div className="player-status-strip">
+            {error ? (
+              <p role="alert" className="player-status-error">
+                {error}
+              </p>
+            ) : null}
+            {countdown ? (
+              <span className="player-countdown" role="timer">
+                {countdown.left}s 后播放：{countdown.label}
+                <button type="button" onClick={() => setCountdown(null)}>
+                  取消
+                </button>
+              </span>
+            ) : null}
+          </div>
         ) : null}
         <footer className="player-controls">
           <div className="player-timeline">
@@ -646,7 +645,6 @@ export function PlayerPage() {
                 <Captions aria-hidden="true" />
                 弹幕 {danmaku ? "开" : "关"}
               </button>
-            <div className="player-settings-menu">
               <button
                 type="button"
                 className="player-toggle-button player-settings-btn"
@@ -654,23 +652,26 @@ export function PlayerPage() {
                 aria-controls="player-danmaku-settings"
                 onClick={() => setDanmakuPanelOpen((open) => !open)}
               >
-                  <Settings2 className="size-4" aria-hidden="true" />
-                  弹幕设置
+                <Settings2 className="size-4" aria-hidden="true" />
+                弹幕设置
               </button>
-              {danmakuPanelOpen ? (
-              <div
-                id="player-danmaku-settings"
-                className="player-danmaku-panel"
-                role="dialog"
-                aria-label="弹幕设置"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setDanmakuPanelOpen(false);
-                }}
-              >
-                <div className="player-panel-heading">
-                  <strong>弹幕设置</strong>
-                  <span>对下一个视频生效</span>
-                </div>
+            </div>
+          </div>
+          {danmakuPanelOpen ? (
+            <div
+              id="player-danmaku-settings"
+              className="player-danmaku-panel"
+              role="region"
+              aria-label="弹幕设置"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setDanmakuPanelOpen(false);
+              }}
+            >
+              <div className="player-panel-heading">
+                <strong>弹幕设置</strong>
+                <span>对下一个视频生效</span>
+              </div>
+              <div className="player-danmaku-options">
                 <label>
                   <span>密度</span>
                   <select
@@ -740,10 +741,8 @@ export function PlayerPage() {
                   </select>
                 </label>
               </div>
-              ) : null}
             </div>
-            </div>
-          </div>
+          ) : null}
         </footer>
         </section>
         <aside className="player-side-panel" aria-label="视频详情">
