@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronUp,
@@ -63,12 +64,14 @@ import {
   createWheelNavigationState,
   shouldIgnoreWheelNavigation,
 } from "@/lib/wheel-navigation";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { routeSource } from "@/lib/watch";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
 export function FeaturedPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const loginOpen = useAuthStore((s) => s.loginOpen);
   const onNeedLogin = () => useAuthStore.getState().setLoginOpen(true);
   const defaults = useSettingsStore.getState();
@@ -576,7 +579,7 @@ export function FeaturedPage() {
       await navigator.clipboard.writeText(
         `https://www.bilibili.com/video/${bvid}`,
       );
-      setError("链接已复制");
+      toast.success("链接已复制");
     } catch (err) {
       handleInteractError(err);
     }
@@ -811,7 +814,14 @@ export function FeaturedPage() {
               className="featured-up"
               onClick={() => {
                 const mid = detail?.owner_mid;
-                if (mid) navigate(`/space/${mid}`);
+                if (mid) {
+                  navigate(`/space/${mid}`, {
+                    state: {
+                      from: routeSource(location),
+                      fromState: location.state,
+                    },
+                  });
+                }
               }}
               title="查看 UP 主空间"
             >

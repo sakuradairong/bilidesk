@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { feedRanking, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import { RANKING_REGIONS } from "@/lib/regions";
+import { openWatch, routeSource } from "@/lib/watch";import { RANKING_REGIONS } from "@/lib/regions";
 import { cn } from "@/lib/utils";
 import type { VideoCard } from "@/types";
 
@@ -64,7 +63,7 @@ export function RankingFeed() {
         error={error}
         ranked
         onOpen={(bvid) =>
-          openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+          openWatch(navigate, bvid, routeSource(location))
         }
         onRetry={() => void load(rid)}
         emptyTitle="排行榜暂时没有内容"

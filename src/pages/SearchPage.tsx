@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { feedSearch, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import type { VideoCard } from "@/types";
+import { openWatch, routeSource } from "@/lib/watch";import type { VideoCard } from "@/types";
 
 export function SearchPage() {
   const [params] = useSearchParams();
@@ -56,7 +55,7 @@ export function SearchPage() {
         items={items}
         loading={loading}
         error={error}
-        onOpen={(bvid) => openWatch(navigate, bvid, `${location.pathname}${location.search}`)}
+        onOpen={(bvid) => openWatch(navigate, bvid, routeSource(location))}
         onRetry={() => void load()}
         emptyTitle={keyword ? "没有找到相关视频" : "输入关键词搜索"}
       />

@@ -4,8 +4,7 @@ import { toAppError, watchlaterClear, watchlaterList } from "@/api";
 import { Button } from "@/components/ui/button";
 import { LoginRequired } from "@/components/LoginRequired";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import { useAuthStore } from "@/stores/auth";
+import { openWatch, routeSource } from "@/lib/watch";import { useAuthStore } from "@/stores/auth";
 import type { VideoCard, WatchLaterItem } from "@/types";
 
 export function WatchLaterPage() {
@@ -78,7 +77,7 @@ export function WatchLaterPage() {
           loading={loading}
           error={error}
           onOpen={(bvid) =>
-            openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+            openWatch(navigate, bvid, routeSource(location))
           }
           onRetry={() => void load()}
           emptyTitle="稍后再看是空的"

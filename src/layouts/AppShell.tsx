@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Compass,
   History,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { mediaSrc } from "@/media";
 import { useAuthStore } from "@/stores/auth";
+import { routeSource } from "@/lib/watch";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -34,6 +35,7 @@ const nav = [
 
 export function AppShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const profile = useAuthStore((s) => s.profile);
   const loginOpen = useAuthStore((s) => s.loginOpen);
@@ -50,6 +52,18 @@ export function AppShell() {
     const q = query.trim();
     if (!q) return;
     navigate(`/search?q=${encodeURIComponent(q)}`);
+  }
+
+  function openOwnSpace() {
+    if (!profile) return;
+    const path = `/space/${profile.mid}`;
+    if (location.pathname === path) return;
+    navigate(path, {
+      state: {
+        from: routeSource(location),
+        fromState: location.state,
+      },
+    });
   }
 
   return (
@@ -117,9 +131,7 @@ export function AppShell() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => navigate(`/space/${profile.mid}`)}
-                >
+                <DropdownMenuItem onClick={openOwnSpace}>
                   我的空间
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void logout()}>

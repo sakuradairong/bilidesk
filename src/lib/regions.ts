@@ -1,3 +1,13 @@
+export function regionSearchParams(
+  current: URLSearchParams,
+  nextRid: number,
+): URLSearchParams {
+  const next = new URLSearchParams(current);
+  next.set("tab", "region");
+  next.set("rid", String(nextRid));
+  return next;
+}
+
 /** B 站常用主分区（静态表，rid 与官网一致） */
 export const REGIONS: { rid: number; name: string }[] = [
   { rid: 1, name: "动画" },

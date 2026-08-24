@@ -8,8 +8,7 @@ import { PopularFeed } from "@/pages/PopularPage";
 import { RegionFeed } from "@/pages/RegionPage";
 import { DynamicFeedView } from "@/pages/DynamicPage";
 import { RankingFeed } from "@/pages/RankingPage";
-import { openWatch } from "@/lib/watch";
-import type { VideoCard } from "@/types";
+import { openWatch, routeSource } from "@/lib/watch";import type { VideoCard } from "@/types";
 
 const TABS = [
   { key: "recommend", label: "推荐" },
@@ -55,7 +54,7 @@ function RecommendFeed({
       loading={loading}
       error={error}
       onOpen={(bvid) =>
-        openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+        openWatch(navigate, bvid, routeSource(location))
       }
       onMore={() => void load(idx + 1, true)}
       onRetry={() => void (items.length ? load(idx + 1, true) : load(1))}
