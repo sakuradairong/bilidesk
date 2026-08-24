@@ -25,19 +25,24 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "DM Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-display: "Source Serif 4", "Songti SC", serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
 :root {
   --radius: 0.625rem;
+  --theme-pink: oklch(0.55 0.14 8);
+  --theme-cyan: oklch(0.53 0.11 215);
+  --theme-blue: oklch(0.5 0.16 262);
+  --theme-purple: oklch(0.5 0.16 300);
+  --theme-green: oklch(0.52 0.13 150);
   --background: oklch(0.985 0.004 80);
   --foreground: oklch(0.22 0.02 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.02 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.02 260);
-  --primary: oklch(0.55 0.14 8);
+  --primary: var(--theme-pink);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.96 0.01 80);
   --secondary-foreground: oklch(0.3 0.02 260);
@@ -48,17 +53,23 @@
   --destructive: oklch(0.55 0.2 25);
   --border: oklch(0.9 0.01 80);
   --input: oklch(0.9 0.01 80);
-  --ring: oklch(0.55 0.14 8);
+  --ring: var(--theme-pink);
 }
 
-.dark {
+.dark,
+html.player-mode,
+html.featured-mode {
+  --theme-pink: oklch(0.72 0.12 8);
+  --theme-cyan: oklch(0.78 0.1 215);
+  --theme-blue: oklch(0.7 0.13 262);
+  --theme-purple: oklch(0.7 0.13 300);
+  --theme-green: oklch(0.72 0.12 150);
   --background: oklch(0.18 0.015 260);
   --foreground: oklch(0.95 0.01 80);
   --card: oklch(0.22 0.015 260);
   --card-foreground: oklch(0.95 0.01 80);
   --popover: oklch(0.22 0.015 260);
   --popover-foreground: oklch(0.95 0.01 80);
-  --primary: oklch(0.72 0.12 8);
   --primary-foreground: oklch(0.18 0.02 260);
   --secondary: oklch(0.28 0.02 260);
   --secondary-foreground: oklch(0.95 0.01 80);
@@ -69,41 +80,29 @@
   --destructive: oklch(0.65 0.18 25);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.72 0.12 8);
+  color-scheme: dark;
 }
 
-/* BiliOne 风格可选主题色（html[data-accent] 切换，.dark 同元素叠加） */
-[data-accent="cyan"] {
-  --primary: oklch(0.58 0.11 215);
-  --ring: oklch(0.58 0.11 215);
+/* BiliOne 风格可选主题色（html[data-accent] 切换） */
+[data-accent="pink"] {
+  --primary: var(--theme-pink);
+  --ring: var(--theme-pink);
 }
-.dark[data-accent="cyan"] {
-  --primary: oklch(0.78 0.1 215);
-  --ring: oklch(0.78 0.1 215);
+[data-accent="cyan"] {
+  --primary: var(--theme-cyan);
+  --ring: var(--theme-cyan);
 }
 [data-accent="blue"] {
-  --primary: oklch(0.5 0.16 262);
-  --ring: oklch(0.5 0.16 262);
-}
-.dark[data-accent="blue"] {
-  --primary: oklch(0.7 0.13 262);
-  --ring: oklch(0.7 0.13 262);
+  --primary: var(--theme-blue);
+  --ring: var(--theme-blue);
 }
 [data-accent="purple"] {
-  --primary: oklch(0.5 0.16 300);
-  --ring: oklch(0.5 0.16 300);
-}
-.dark[data-accent="purple"] {
-  --primary: oklch(0.7 0.13 300);
-  --ring: oklch(0.7 0.13 300);
+  --primary: var(--theme-purple);
+  --ring: var(--theme-purple);
 }
 [data-accent="green"] {
-  --primary: oklch(0.55 0.13 150);
-  --ring: oklch(0.55 0.13 150);
-}
-.dark[data-accent="green"] {
-  --primary: oklch(0.72 0.12 150);
-  --ring: oklch(0.72 0.12 150);
+  --primary: var(--theme-green);
+  --ring: var(--theme-green);
 }
 
 @layer base {
@@ -151,6 +150,19 @@
     background: #090b10 !important;
     background-image: none !important;
   }
+}
+
+.window-titlebar-button:focus-visible,
+.app-shell-nav-item:focus-visible,
+.app-settings-link:focus-visible,
+.section-chip:focus-visible,
+.pill-tab:focus-visible,
+.accent-swatch:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.window-titlebar-button:focus-visible {
+  outline-offset: -3px;
 }
 
 /* BiliOne-inspired desktop shell with a unified custom Windows chrome. */
@@ -880,7 +892,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.player-owner-card span { color: rgb(255 255 255 / 42%); font-size: 11px; }
+.player-owner-card span { color: rgb(255 255 255 / 62%); font-size: 12px; }
 .player-intro-block,
 .player-side-section {
   padding: 16px 0;
@@ -897,8 +909,8 @@
   display: -webkit-box;
   overflow: hidden;
   margin: 12px 0 0;
-  color: rgb(255 255 255 / 52%);
-  font-size: 12px;
+  color: rgb(255 255 255 / 68%);
+  font-size: 13px;
   line-height: 1.65;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
@@ -915,12 +927,12 @@
   gap: 2px;
   border-radius: 9px;
   background: rgb(255 255 255 / 4%);
-  color: rgb(255 255 255 / 38%);
+  color: rgb(255 255 255 / 60%);
   padding: 8px 5px;
-  font-size: 10px;
+  font-size: 11px;
   text-align: center;
 }
-.player-stat-grid strong { color: rgb(255 255 255 / 78%); font-size: 11px; }
+.player-stat-grid strong { color: rgb(255 255 255 / 90%); font-size: 12px; }
 .player-side-section-title {
   display: flex;
   align-items: center;
@@ -929,7 +941,7 @@
   color: white;
   font-size: 13px;
 }
-.player-side-section-title span { color: rgb(255 255 255 / 38%); font-size: 11px; }
+.player-side-section-title span { color: rgb(255 255 255 / 60%); font-size: 12px; }
 .player-episode-list,
 .player-related-list { display: flex; flex-direction: column; gap: 7px; }
 .player-episode-list button {
@@ -944,7 +956,7 @@
   color: rgb(255 255 255 / 70%);
   cursor: pointer;
   padding: 9px 10px;
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -952,7 +964,7 @@
 .player-episode-list button:hover { background: rgb(255 255 255 / 8%); }
 .player-episode-list button.is-active { background: color-mix(in oklab, var(--primary) 17%, #1a1d24); color: white; }
 .player-episode-list button span { color: var(--primary); font-weight: 700; }
-.player-episode-list button em { color: rgb(255 255 255 / 34%); font-style: normal; }
+.player-episode-list button em { color: rgb(255 255 255 / 58%); font-size: 11px; font-style: normal; }
 .player-related-list button {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
@@ -971,13 +983,13 @@
 .player-related-list strong {
   display: -webkit-box;
   overflow: hidden;
-  color: rgb(255 255 255 / 82%);
-  font-size: 11px;
+  color: rgb(255 255 255 / 90%);
+  font-size: 12px;
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-.player-related-list small { overflow: hidden; color: rgb(255 255 255 / 36%); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.player-related-list small { overflow: hidden; color: rgb(255 255 255 / 58%); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .player-comment-list article {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -986,10 +998,10 @@
   border-bottom: 1px solid rgb(255 255 255 / 6%);
 }
 .player-comment-list article > img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
-.player-comment-list article strong { color: rgb(255 255 255 / 72%); font-size: 11px; }
-.player-comment-list article p { margin: 5px 0; color: rgb(255 255 255 / 78%); font-size: 12px; line-height: 1.6; }
+.player-comment-list article strong { color: rgb(255 255 255 / 82%); font-size: 12px; }
+.player-comment-list article p { margin: 5px 0; color: rgb(255 255 255 / 86%); font-size: 13px; line-height: 1.6; }
 .player-comment-list article span,
-.player-side-status { color: rgb(255 255 255 / 36%); font-size: 10px; }
+.player-side-status { color: rgb(255 255 255 / 58%); font-size: 11px; }
 .player-side-status { padding: 24px 8px; text-align: center; }
 .player-danmaku-panel select {
   min-width: 112px;
@@ -1161,8 +1173,8 @@ html.featured-mode .window-titlebar-button.is-close:hover {
   background: #c42b3a;
 }
 html.featured-mode .app-shell-nav-item.is-active {
-  background: oklch(0.72 0.12 8 / 0.2);
-  color: oklch(0.85 0.08 8);
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+  color: color-mix(in oklab, var(--primary) 70%, white);
 }
 html.featured-mode .app-content-frame { height: 100%; width: 100%; max-width: none; }
 
@@ -1633,8 +1645,21 @@ html.featured-mode .app-content-frame { height: 100%; width: 100%; max-width: no
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .video-card:hover,
+  .video-card:hover img,
+  .accent-swatch:hover,
   .featured-playback-notice {
-    transition: none;
-    transform: none;
+    transform: none !important;
+  }
+  [data-slot="skeleton"] {
+    animation: none !important;
   }
 }

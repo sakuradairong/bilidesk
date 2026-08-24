@@ -79,7 +79,7 @@ export function SettingsPage() {
                 aria-pressed={accent === item.key}
                 onClick={() => void setAccent(item.key)}
                 className={cn(
-                  "size-7 rounded-full transition-transform hover:scale-110",
+                  "accent-swatch size-7 rounded-full transition-transform hover:scale-110",
                   accent === item.key &&
                     "ring-2 ring-ring ring-offset-2 ring-offset-card",
                 )}

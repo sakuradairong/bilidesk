@@ -3,8 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { favResourceList, favFolders, toAppError } from "@/api";
 import { LoginRequired } from "@/components/LoginRequired";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import { cn } from "@/lib/utils";
+import { openWatch, routeSource } from "@/lib/watch";import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import type { FavFolder, VideoCard } from "@/types";
 
@@ -102,7 +101,7 @@ export function FavoritesPage() {
               openWatch(
                 navigate,
                 bvid,
-                `${location.pathname}${location.search}`,
+                routeSource(location),
               )
             }
             onMore={

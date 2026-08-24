@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { feedRegion, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import { REGIONS } from "@/lib/regions";
+import { openWatch, routeSource } from "@/lib/watch";
+import { REGIONS, regionSearchParams } from "@/lib/regions";
 import { cn } from "@/lib/utils";
 import type { VideoCard } from "@/types";
 
@@ -41,22 +41,20 @@ export function RegionFeed() {
   }, [rid, loadPage]);
 
   function switchRegion(nextRid: number) {
-    setParams({ rid: String(nextRid) }, { replace: true });
+    setParams(regionSearchParams(params, nextRid), { replace: true });
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="section-chips" aria-label="视频分区">
         {REGIONS.map((region) => (
           <button
             key={region.rid}
             type="button"
             onClick={() => switchRegion(region.rid)}
             className={cn(
-              "rounded-full border px-3 py-1 text-sm transition-colors",
-              region.rid === rid
-                ? "border-primary bg-primary/10 font-medium text-primary"
-                : "border-border bg-card/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+              "section-chip",
+              region.rid === rid && "is-active",
             )}
           >
             {region.name}
@@ -67,9 +65,7 @@ export function RegionFeed() {
         items={items}
         loading={loading && items.length === 0}
         error={error}
-        onOpen={(bvid) =>
-          openWatch(navigate, bvid, `${location.pathname}${location.search}`)
-        }
+        onOpen={(bvid) => openWatch(navigate, bvid, routeSource(location))}
         onMore={more ? () => void loadPage(rid, page + 1) : undefined}
         onRetry={() => void loadPage(rid, page)}
         emptyTitle="该分区暂时没有稿件"

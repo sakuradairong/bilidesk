@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { feedPopular, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import type { VideoCard } from "@/types";
+import { openWatch, routeSource } from "@/lib/watch";import type { VideoCard } from "@/types";
 
 export function PopularFeed() {
   const navigate = useNavigate();
@@ -40,7 +39,7 @@ export function PopularFeed() {
       loading={loading && items.length === 0}
       error={error}
       onOpen={(bvid) =>
-        openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+        openWatch(navigate, bvid, routeSource(location))
       }
       onMore={more ? () => void loadPage(page + 1) : undefined}
       onRetry={() => void loadPage(page)}

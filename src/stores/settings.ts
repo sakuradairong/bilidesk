@@ -4,11 +4,11 @@ import type { ThemeMode } from "@/types";
 
 /** BiliOne 风格可选主题色 */
 export const ACCENTS: { key: string; label: string; color: string }[] = [
-  { key: "pink", label: "B 站粉", color: "oklch(0.62 0.17 8)" },
-  { key: "cyan", label: "青色", color: "oklch(0.65 0.11 215)" },
-  { key: "blue", label: "蓝色", color: "oklch(0.55 0.16 262)" },
-  { key: "purple", label: "紫色", color: "oklch(0.55 0.16 300)" },
-  { key: "green", label: "绿色", color: "oklch(0.6 0.13 150)" },
+  { key: "pink", label: "B 站粉", color: "var(--theme-pink)" },
+  { key: "cyan", label: "青色", color: "var(--theme-cyan)" },
+  { key: "blue", label: "蓝色", color: "var(--theme-blue)" },
+  { key: "purple", label: "紫色", color: "var(--theme-purple)" },
+  { key: "green", label: "绿色", color: "var(--theme-green)" },
 ];
 
 type SettingsState = {

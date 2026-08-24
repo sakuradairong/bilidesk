@@ -3,8 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { dynamicFeed, toAppError } from "@/api";
 import { LoginRequired } from "@/components/LoginRequired";
 import { VideoGridPage } from "@/pages/VideoGridPage";
-import { openWatch } from "@/lib/watch";
-import { useAuthStore } from "@/stores/auth";
+import { openWatch, routeSource } from "@/lib/watch";import { useAuthStore } from "@/stores/auth";
 import type { VideoCard } from "@/types";
 
 type Row = {
@@ -61,7 +60,7 @@ export function DynamicFeedView() {
         loading={loading && items.length === 0}
         error={error}
         onOpen={(bvid) =>
-          openWatch(navigate, bvid, `${location.pathname}${location.search}`)
+          openWatch(navigate, bvid, routeSource(location))
         }
         onMore={hasMore ? () => void loadPage(offset) : undefined}
         onRetry={() => void loadPage(offset)}

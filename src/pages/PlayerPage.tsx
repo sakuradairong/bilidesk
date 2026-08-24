@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Captions,
@@ -34,7 +35,11 @@ import { formatDuration } from "@/components/VideoCard";
 import { WindowTitleBar } from "@/components/WindowTitleBar";
 import { mediaSrc } from "@/media";
 import { isHotkeyIgnored } from "@/lib/hotkeys";
-import { watchBack } from "@/lib/watch";
+import {
+  type ReturnNavigationState,
+  routeSource,
+  watchBack,
+} from "@/lib/watch";
 import type {
   CommentItem,
   PlaySession,
@@ -51,7 +56,9 @@ export function PlayerPage() {
   const { bvid = "" } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from;
+  const returnState = location.state as ReturnNavigationState | null;
+  const from = returnState?.from;
+  const fromState = returnState?.fromState;
   const loaded = useSettingsStore((s) => s.loaded);
   const defaultVolume = useSettingsStore((s) => s.defaultVolume);
   const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
@@ -96,7 +103,7 @@ export function PlayerPage() {
   progressRef.current = progress;
   sessionRef.current = session;
 
-  const onBack = () => watchBack(navigate, from);
+  const onBack = () => watchBack(navigate, from, fromState);
 
   useEffect(() => {
     document.documentElement.classList.add("player-mode");
@@ -446,7 +453,7 @@ export function PlayerPage() {
     try {
       await watchlaterSave(aid);
       setSavedLater(true);
-      setError("已加入稍后再看");
+      toast.success("已加入稍后再看");
     } catch (err) {
       setError(toAppError(err).message);
     }
@@ -454,7 +461,14 @@ export function PlayerPage() {
 
   function openSpace() {
     const mid = detail?.owner_mid;
-    if (mid) navigate(`/space/${mid}`, { state: { from: `/watch/${bvid}` } });
+    if (mid) {
+      navigate(`/space/${mid}`, {
+        state: {
+          from: routeSource(location),
+          fromState: location.state,
+        },
+      });
+    }
   }
 
   return (

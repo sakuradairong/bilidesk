@@ -6,7 +6,12 @@ import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { VideoGridPage } from "@/pages/VideoGridPage";
 import { mediaSrc } from "@/media";
-import { openWatch } from "@/lib/watch";
+import {
+  openWatch,
+  type ReturnNavigationState,
+  routeSource,
+  watchBack,
+} from "@/lib/watch";
 import { useAuthStore } from "@/stores/auth";
 import type { UserSpace, VideoCard as VideoCardType } from "@/types";
 
@@ -20,8 +25,9 @@ export function UserSpacePage() {
   const midNum = Number(mid);
   const navigate = useNavigate();
   const location = useLocation();
-  const from =
-    (location.state as { from?: string } | null)?.from ?? "/featured";
+  const returnState = location.state as ReturnNavigationState | null;
+  const from = returnState?.from;
+  const fromState = returnState?.fromState;
   const profile = useAuthStore((s) => s.profile);
   const [space, setSpace] = useState<UserSpace | null>(null);
   const [items, setItems] = useState<VideoCardType[]>([]);
@@ -96,7 +102,10 @@ export function UserSpacePage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card/70 p-5 shadow-sm">
-        <Button variant="ghost" onClick={() => navigate(from)}>
+        <Button
+          variant="ghost"
+          onClick={() => watchBack(navigate, from, fromState)}
+        >
           返回
         </Button>
         {space ? (
@@ -153,7 +162,9 @@ export function UserSpacePage() {
         items={items}
         loading={loading && items.length === 0}
         error={error}
-        onOpen={(bvid) => openWatch(navigate, bvid, `/space/${midNum}`)}
+        onOpen={(bvid) =>
+          openWatch(navigate, bvid, routeSource(location), location.state)
+        }
         onMore={more ? () => void loadPage(page + 1) : undefined}
         onRetry={() => void loadPage(page)}
         emptyTitle="暂无投稿"
