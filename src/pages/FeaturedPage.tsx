@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   ChevronDown,
@@ -6,11 +13,15 @@ import {
   CircleDollarSign,
   Clock3,
   MessageCircle,
+  Pause,
+  Play,
+  Send,
   Share2,
   Sparkles,
   Star,
   ThumbsDown,
   ThumbsUp,
+  Volume2,
 } from "lucide-react";
 import {
   archiveCoin,
@@ -47,6 +58,11 @@ import type {
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore } from "@/stores/settings";
 import { isHotkeyIgnored } from "@/lib/hotkeys";
+import {
+  advanceWheelNavigation,
+  createWheelNavigationState,
+  shouldIgnoreWheelNavigation,
+} from "@/lib/wheel-navigation";
 import { useNavigate } from "react-router-dom";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
@@ -79,6 +95,8 @@ export function FeaturedPage() {
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [commentCount, setCommentCount] = useState(0);
   const [commentText, setCommentText] = useState("");
+  const [playbackNotice, setPlaybackNotice] = useState("");
+  const pageRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<VideoCard[]>([]);
   const indexRef = useRef(0);
@@ -91,9 +109,19 @@ export function FeaturedPage() {
   const speedRef = useRef(speed);
   const danmakuRef = useRef(danmaku);
   const commentsOpenRef = useRef(false);
+  const sessionRef = useRef<PlaySession | null>(null);
+  const pauseInFlightRef = useRef(false);
+  const pausePromiseRef = useRef<Promise<void> | null>(null);
+  const pauseGuardUntilRef = useRef(0);
+  const playbackNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wheelStateRef = useRef(createWheelNavigationState());
   const playAtRef = useRef<
     (nextIndex: number, source?: VideoCard[]) => Promise<void>
   >(async () => {});
+  const playRelativeRef = useRef<(offset: -1 | 1) => Promise<void>>(
+    async () => {},
+  );
+  const togglePlaybackRef = useRef<() => Promise<void>>(async () => {});
 
   progressRef.current = progress;
   speedRef.current = speed;
@@ -101,12 +129,16 @@ export function FeaturedPage() {
   commentsOpenRef.current = commentsOpen;
   itemsRef.current = items;
   indexRef.current = index;
+  sessionRef.current = session;
 
   useEffect(() => {
     document.documentElement.classList.add("featured-mode");
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      if (playbackNoticeTimerRef.current) {
+        clearTimeout(playbackNoticeTimerRef.current);
+      }
       document.documentElement.classList.remove("featured-mode");
       void playerStopBackdrop();
     };
@@ -209,13 +241,13 @@ export function FeaturedPage() {
       if (isHotkeyIgnored(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
-        void playerTogglePause();
+        if (!event.repeat) void togglePlaybackRef.current();
       } else if (event.code === "ArrowUp") {
         event.preventDefault();
-        void playAtRef.current(indexRef.current - 1);
+        if (!event.repeat) void playRelativeRef.current(-1);
       } else if (event.code === "ArrowDown" || event.code === "KeyF") {
         event.preventDefault();
-        void playAtRef.current(indexRef.current + 1);
+        if (!event.repeat) void playRelativeRef.current(1);
       } else if (event.code === "ArrowLeft") {
         event.preventDefault();
         void playerSeek(Math.max(progressRef.current.time - 5, 0));
@@ -235,6 +267,34 @@ export function FeaturedPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+    wheelStateRef.current = createWheelNavigationState();
+    function onWheel(event: WheelEvent) {
+      if (useAuthStore.getState().loginOpen) return;
+      if (shouldIgnoreWheelNavigation(event.target)) return;
+      const result = advanceWheelNavigation(wheelStateRef.current, {
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        now: performance.now(),
+        pageHeight: pageRef.current?.clientHeight || window.innerHeight,
+        ctrlKey: event.ctrlKey,
+      });
+      wheelStateRef.current = result.state;
+      if (result.direction == null) return;
+      if (result.direction < 0 && indexRef.current <= 0) {
+        wheelStateRef.current = createWheelNavigationState();
+        return;
+      }
+      event.preventDefault();
+      void playRelativeRef.current(result.direction);
+    }
+    page.addEventListener("wheel", onWheel, { passive: false });
+    return () => page.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => {
@@ -269,6 +329,7 @@ export function FeaturedPage() {
     }
     openingRef.current = true;
     try {
+      if (pausePromiseRef.current) await pausePromiseRef.current;
       await ensureMore(nextIndex, source);
       if (!aliveRef.current) return;
       const card = itemsRef.current[nextIndex];
@@ -282,6 +343,7 @@ export function FeaturedPage() {
       setDisliked(false);
       setSavedLater(false);
       setCommentsOpen(false);
+      setPlaybackNotice("");
       setError("");
       const nextSession = await playerOpenBackdrop(
         card.bvid,
@@ -307,6 +369,60 @@ export function FeaturedPage() {
     }
   }
   playAtRef.current = playAt;
+
+  async function playRelative(offset: -1 | 1) {
+    await playAtRef.current(indexRef.current + offset);
+  }
+  playRelativeRef.current = playRelative;
+
+  function showPlaybackNotice(message: string) {
+    if (playbackNoticeTimerRef.current) {
+      clearTimeout(playbackNoticeTimerRef.current);
+    }
+    setPlaybackNotice(message);
+    playbackNoticeTimerRef.current = setTimeout(() => {
+      playbackNoticeTimerRef.current = null;
+      if (aliveRef.current) setPlaybackNotice("");
+    }, 850);
+  }
+
+  async function toggleFeaturedPlayback() {
+    const now = Date.now();
+    if (
+      !sessionRef.current ||
+      useAuthStore.getState().loginOpen ||
+      openingRef.current ||
+      pauseInFlightRef.current ||
+      now < pauseGuardUntilRef.current
+    ) {
+      return;
+    }
+    pauseInFlightRef.current = true;
+    pauseGuardUntilRef.current = now + 240;
+    const wasPaused = progressRef.current.paused;
+    const request = playerTogglePause()
+      .then(() => {
+        if (aliveRef.current) {
+          showPlaybackNotice(wasPaused ? "继续播放" : "已暂停");
+        }
+      })
+      .catch((err) => {
+        if (aliveRef.current) setError(toAppError(err).message);
+      });
+    pausePromiseRef.current = request;
+    try {
+      await request;
+    } finally {
+      if (pausePromiseRef.current === request) pausePromiseRef.current = null;
+      pauseInFlightRef.current = false;
+    }
+  }
+  togglePlaybackRef.current = toggleFeaturedPlayback;
+
+  function handleStageClick(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.detail > 1) return;
+    void toggleFeaturedPlayback();
+  }
 
   async function ensureMore(nextIndex: number, source: VideoCard[]) {
     if (itemsRef.current.length === 0 && source.length > 0) {
@@ -554,21 +670,23 @@ export function FeaturedPage() {
 
   return (
     <div
+      ref={pageRef}
       className={`featured-page${session ? " is-playing" : ""}${commentsOpen ? " comments-open" : ""}`}
     >
       <div
         className="featured-stage"
         ref={stageRef}
-        onClick={() => void playerTogglePause()}
+        title="单击暂停或播放"
+        onClick={handleStageClick}
       />
-      <div className="featured-rail">
+      <div className="featured-rail" data-wheel-navigation="ignore">
         <div className="featured-navigation">
           <button
             className="featured-chevron"
             disabled={index <= 0}
             aria-label="上一条"
             title="上一条"
-            onClick={() => void playAt(indexRef.current - 1)}
+            onClick={() => void playRelative(-1)}
           >
             <ChevronUp aria-hidden="true" />
           </button>
@@ -576,7 +694,7 @@ export function FeaturedPage() {
             className="featured-chevron"
             aria-label="下一条"
             title="下一条"
-            onClick={() => void playAt(indexRef.current + 1)}
+            onClick={() => void playRelative(1)}
           >
             <ChevronDown aria-hidden="true" />
           </button>
@@ -638,7 +756,7 @@ export function FeaturedPage() {
         </div>
       </div>
       {commentsOpen ? (
-        <aside className="featured-comments">
+        <aside className="featured-comments" data-wheel-navigation="ignore">
           <header>
             <strong>评论 {commentCount}</strong>
             <button
@@ -687,7 +805,7 @@ export function FeaturedPage() {
           ) : (
             <div className="featured-avatar" />
           )}
-          <div>
+          <div className="featured-meta-copy">
             <button
               type="button"
               className="featured-up"
@@ -699,16 +817,39 @@ export function FeaturedPage() {
             >
               {owner}
             </button>
-            <div className="featured-title">{title}</div>
-            {season ? <div className="featured-season">{season}</div> : null}
+            <div className="featured-title" title={title}>
+              {title}
+            </div>
+            <div className="featured-context">
+              {season ? <span>{season}</span> : null}
+              <span>
+                第 {Math.min(index + 1, Math.max(items.length, 1))} 条
+              </span>
+              <span className="featured-interaction-hint">
+                滚轮切换 · 单击画面暂停/播放
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="featured-bar">
-          <button
-            className="ghost-btn"
-            onClick={() => void playerTogglePause()}
+          <span
+            className={`featured-playback-notice${playbackNotice ? " is-visible" : ""}`}
+            aria-live="polite"
           >
-            {progress.paused ? "播放" : "暂停"}
+            {playbackNotice}
+          </span>
+        </div>
+        <div className="featured-transport" data-wheel-navigation="ignore">
+          <button
+            type="button"
+            className="featured-play-button"
+            aria-label={progress.paused ? "播放" : "暂停"}
+            title={progress.paused ? "播放" : "暂停"}
+            onClick={() => void toggleFeaturedPlayback()}
+          >
+            {progress.paused ? (
+              <Play aria-hidden="true" />
+            ) : (
+              <Pause aria-hidden="true" />
+            )}
           </button>
           <span className="time-label">
             {formatDuration(progress.time)} /{" "}
@@ -724,15 +865,24 @@ export function FeaturedPage() {
             aria-label="播放进度"
             onChange={(e) => void playerSeek(Number(e.target.value))}
           />
-          <input
-            type="range"
-            min={0}
-            max={130}
-            value={progress.volume}
-            aria-label="音量"
+        </div>
+        <div className="featured-tools" data-wheel-navigation="ignore">
+          <label
+            className="featured-volume"
             title="音量"
-            onChange={(e) => void playerSetVolume(Number(e.target.value))}
-          />
+            data-wheel-navigation="ignore"
+          >
+            <Volume2 aria-hidden="true" />
+            <input
+              type="range"
+              min={0}
+              max={130}
+              value={progress.volume}
+              aria-label="音量"
+              onChange={(e) => void playerSetVolume(Number(e.target.value))}
+            />
+            <span>{Math.round(progress.volume)}</span>
+          </label>
           <select
             value={session?.current_quality ?? ""}
             aria-label="清晰度"
@@ -755,22 +905,38 @@ export function FeaturedPage() {
               </option>
             ))}
           </select>
-          <button className="ghost-btn" onClick={() => void toggleDanmaku()}>
+          <button
+            type="button"
+            className="ghost-btn"
+            aria-pressed={danmaku}
+            onClick={() => void toggleDanmaku()}
+          >
             弹幕 {danmaku ? "开" : "关"}
           </button>
-          <input
-            className="featured-dm"
-            value={danmakuText}
-            aria-label="发弹幕"
-            placeholder="发条弹幕"
-            onChange={(e) => setDanmakuText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void sendDanmaku();
-              }
-            }}
-          />
+          <div className="featured-dm-compose">
+            <input
+              className="featured-dm"
+              value={danmakuText}
+              aria-label="发弹幕"
+              placeholder="发条弹幕"
+              onChange={(e) => setDanmakuText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void sendDanmaku();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="featured-send-button"
+              aria-label="发送弹幕"
+              title="发送弹幕"
+              onClick={() => void sendDanmaku()}
+            >
+              <Send aria-hidden="true" />
+            </button>
+          </div>
         </div>
         {error ? <p className="featured-error">{error}</p> : null}
       </div>
@@ -797,8 +963,9 @@ function ActionButton({
     <button
       type="button"
       className={`featured-action ${active ? "active" : ""}`}
-      aria-pressed={!!active}
+      aria-pressed={active == null ? undefined : active}
       aria-expanded={expanded}
+      title={label}
       onClick={onClick}
     >
       {icon}
