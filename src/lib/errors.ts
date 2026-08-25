@@ -43,3 +43,15 @@ function inferredCode(error: ErrorLike): string {
 export function describeUserError(error: ErrorLike): string {
   return COPY[inferredCode(error)] ?? error.message;
 }
+
+export function describeRegionFeedError(error: ErrorLike): string {
+  if (inferredCode(error) === "video_unavailable") {
+    return "分区内容接口暂不可用，请稍后重试。";
+  }
+
+  const message = describeUserError(error);
+  if (message.includes("分区内容")) {
+    return message.replace(/^接口返回异常:\s*/, "");
+  }
+  return message;
+}

@@ -25,7 +25,7 @@ const USER_CARD: &str = "https://api.bilibili.com/x/web-interface/card";
 const USER_ARC: &str = "https://api.bilibili.com/x/space/wbi/arc/search";
 const POPULAR: &str = "https://api.bilibili.com/x/web-interface/popular";
 const RANKING: &str = "https://api.bilibili.com/x/web-interface/ranking/v2";
-const REGION_DYNAMIC: &str = "https://api.bilibili.com/x/web-interface/dynamic/region";
+const REGION_NEWLIST: &str = "https://api.bilibili.com/x/web-interface/newlist";
 const FAV_RESOURCE: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const DYNAMIC_FEED: &str = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
 
@@ -750,18 +750,10 @@ impl BiliClient {
         Ok(cards_from_ranking(&value))
     }
 
-    /// 分区最新稿件
-    pub async fn region_dynamic(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
-        let url = format!("{REGION_DYNAMIC}?rid={rid}&ps=30&pn={}", page.max(1));
-        let value = self.get_json(&url).await?;
-        check_code(&value)?;
-        Ok(value["data"]["archives"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(parse_card)
-            .collect())
+    /// 分区最新稿件（newlist）
+    pub async fn region_newlist(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
+        let value = self.get_json(&region_newlist_url(rid, page)).await?;
+        parse_region_response(&value)
     }
 
     /// 收藏夹内容列表；media_id 为空时取默认收藏夹
@@ -825,6 +817,57 @@ impl BiliClient {
             items,
         })
     }
+}
+
+fn region_newlist_url(rid: u32, page: u32) -> String {
+    format!("{REGION_NEWLIST}?rid={rid}&type=0&pn={}&ps=30", page.max(1))
+}
+
+fn parse_region_response(value: &Value) -> BiliResult<Vec<VideoCard>> {
+    let code = value
+        .get("code")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| BiliError::Api("分区内容接口响应缺少错误码".into()))?;
+    if code != 0 {
+        let message = value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        return match code {
+            -101 => Err(BiliError::msg("未登录")),
+            -352 | -412 => Err(BiliError::msg("请求被风控，请稍后重试或重新登录")),
+            -509 => Err(BiliError::msg("请求过于频繁，请稍后再试")),
+            _ if message.contains("未登录") || message.contains("登录过期") => {
+                Err(BiliError::msg("未登录"))
+            }
+            _ if message.contains("风控") => {
+                Err(BiliError::msg("请求被风控，请稍后重试或重新登录"))
+            }
+            _ if message.contains("过于频繁") || message.contains("限流") => {
+                Err(BiliError::msg("请求过于频繁，请稍后再试"))
+            }
+            _ => Err(BiliError::Api(format!(
+                "分区内容接口暂不可用（上游错误码 {code}）"
+            ))),
+        };
+    }
+
+    let archives = value
+        .get("data")
+        .and_then(|data| data.get("archives"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| BiliError::Api("分区内容接口响应格式发生变化".into()))?;
+    if archives.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let cards = archives.iter().filter_map(parse_card).collect::<Vec<_>>();
+    if cards.is_empty() {
+        return Err(BiliError::Api(
+            "分区内容接口返回了无法识别的稿件数据".into(),
+        ));
+    }
+    Ok(cards)
 }
 
 fn unix_ms() -> u128 {
@@ -1205,6 +1248,131 @@ mod tests {
         assert_eq!(card.cover, "https://i0.hdslb.com/bfs/cover.png");
         assert_eq!(card.duration, 125);
         assert_eq!(card.views, 88);
+    }
+
+    #[test]
+    fn region_newlist_url_uses_latest_feed_contract() {
+        let url = region_newlist_url(167, 0);
+        assert_eq!(
+            url,
+            "https://api.bilibili.com/x/web-interface/newlist?rid=167&type=0&pn=1&ps=30"
+        );
+        assert!(!url.contains("dynamic/region"));
+        assert!(region_newlist_url(1, 3).contains("pn=3"));
+    }
+
+    #[test]
+    fn region_response_parses_valid_archives() {
+        let value = json!({
+            "code": 0,
+            "data": {
+                "archives": [
+                    {
+                        "bvid": "BV1region1111",
+                        "title": "latest",
+                        "pic": "//i0.hdslb.com/latest.jpg",
+                        "owner": { "name": "up" },
+                        "duration": 90,
+                        "stat": { "view": 42 }
+                    }
+                ]
+            }
+        });
+        let cards = parse_region_response(&value).expect("region fixture should parse");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].bvid, "BV1region1111");
+        assert_eq!(cards[0].owner, "up");
+    }
+
+    #[test]
+    fn region_response_accepts_a_genuine_empty_page() {
+        let value = json!({ "code": 0, "data": { "archives": [] } });
+        assert!(parse_region_response(&value)
+            .expect("empty region page should be valid")
+            .is_empty());
+    }
+
+    #[test]
+    fn region_response_rejects_missing_or_invalid_archives() {
+        for value in [
+            json!({ "code": 0 }),
+            json!({ "code": 0, "data": null }),
+            json!({ "code": 0, "data": {} }),
+            json!({ "code": 0, "data": { "archives": null } }),
+            json!({ "code": 0, "data": { "archives": {} } }),
+        ] {
+            let error = parse_region_response(&value).expect_err("invalid contract must fail");
+            assert!(error.to_string().contains("分区内容接口响应格式发生变化"));
+        }
+    }
+
+    #[test]
+    fn region_response_rejects_an_entirely_unparseable_page() {
+        let value = json!({
+            "code": 0,
+            "data": { "archives": [{ "title": "missing bvid" }] }
+        });
+        let error = parse_region_response(&value).expect_err("invalid cards must fail");
+        assert!(error.to_string().contains("无法识别的稿件数据"));
+    }
+
+    #[test]
+    fn region_response_keeps_valid_cards_from_a_mixed_page() {
+        let value = json!({
+            "code": 0,
+            "data": {
+                "archives": [
+                    { "title": "missing bvid" },
+                    { "bvid": "BV1region2222", "title": "valid" }
+                ]
+            }
+        });
+        let cards = parse_region_response(&value).expect("mixed page should keep valid cards");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].bvid, "BV1region2222");
+    }
+
+    #[test]
+    fn region_response_does_not_misclassify_collection_404() {
+        let value = json!({ "code": -404, "message": "啥都木有", "data": null });
+        let error = parse_region_response(&value).expect_err("upstream error should fail");
+        assert_eq!(error.code(), "api");
+        assert!(error.to_string().contains("分区内容接口暂不可用"));
+        assert!(!error.to_string().contains("稿件不存在"));
+        assert!(!error.to_string().contains("啥都木有"));
+    }
+
+    #[test]
+    fn region_response_preserves_auth_risk_and_rate_codes() {
+        let unauthenticated = json!({ "code": -101, "message": "账号未登录" });
+        let risk_control = json!({ "code": -412, "message": "请求被拦截" });
+        let rate_limited = json!({ "code": -509, "message": "请求过于频繁" });
+        let message_rate_limited = json!({ "code": -799, "message": "请求过于频繁" });
+
+        assert_eq!(
+            parse_region_response(&unauthenticated)
+                .expect_err("unauthenticated response should fail")
+                .code(),
+            "unauthenticated"
+        );
+        assert_eq!(
+            parse_region_response(&risk_control)
+                .expect_err("risk response should fail")
+                .code(),
+            "risk_control"
+        );
+        assert_eq!(
+            parse_region_response(&rate_limited)
+                .expect_err("rate-limited response should fail")
+                .code(),
+            "rate_limited"
+        );
+        assert_eq!(
+            parse_region_response(&message_rate_limited)
+                .expect_err("message-based rate limit should fail")
+                .code(),
+            "rate_limited"
+        );
     }
 
     #[test]

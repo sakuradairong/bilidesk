@@ -12,7 +12,7 @@ export function regionSearchParams(
 export const REGIONS: { rid: number; name: string }[] = [
   { rid: 1, name: "动画" },
   { rid: 13, name: "番剧" },
-  { rid: 168, name: "国创" },
+  { rid: 167, name: "国创" },
   { rid: 3, name: "音乐" },
   { rid: 129, name: "舞蹈" },
   { rid: 4, name: "游戏" },
@@ -27,8 +27,18 @@ export const REGIONS: { rid: number; name: string }[] = [
   { rid: 181, name: "影视" },
 ];
 
+export function resolveRegionRid(value: string | null): number {
+  if (value == null || value.trim() === "") return REGIONS[0].rid;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return REGIONS[0].rid;
+  if (parsed === 168) return 167;
+  return REGIONS.some((region) => region.rid === parsed)
+    ? parsed
+    : REGIONS[0].rid;
+}
+
 /** 排行榜接口支持的全站及 UGC 主分区。 */
 export const RANKING_REGIONS: { rid: number; name: string }[] = [
   { rid: 0, name: "全站" },
-  ...REGIONS.filter((region) => ![13, 168].includes(region.rid)),
+  ...REGIONS.filter((region) => ![13, 167].includes(region.rid)),
 ];

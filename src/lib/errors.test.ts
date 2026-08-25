@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AppError, toAppError } from "@/api";
-import { describeUserError } from "./errors";
+import { describeRegionFeedError, describeUserError } from "./errors";
 
 describe("describeUserError", () => {
   it("maps login expiry to a rescan prompt", () => {
@@ -48,6 +48,36 @@ describe("describeUserError", () => {
     expect(
       describeUserError(new AppError("internal", "unexpected backend panic")),
     ).toBe("unexpected backend panic");
+  });
+});
+
+describe("describeRegionFeedError", () => {
+  it("does not present a collection failure as a missing video", () => {
+    expect(
+      describeRegionFeedError(
+        new AppError("video_unavailable", "稿件不存在或已失效"),
+      ),
+    ).toBe("分区内容接口暂不可用，请稍后重试。");
+    expect(
+      describeRegionFeedError(new AppError("api", "啥都木有 (-404)")),
+    ).toBe("分区内容接口暂不可用，请稍后重试。");
+  });
+
+  it("preserves contextual region and shared transport messages", () => {
+    expect(
+      describeRegionFeedError(
+        new AppError(
+          "api",
+          "接口返回异常: 分区内容接口响应格式发生变化",
+        ),
+      ),
+    ).toBe("分区内容接口响应格式发生变化");
+    expect(
+      describeRegionFeedError(new AppError("network", "timeout")),
+    ).toBe("网络不可用或哔哩哔哩接口超时，请检查网络后重试。");
+    expect(
+      describeRegionFeedError(new AppError("risk_control", "请求被风控")),
+    ).toBe("请求被哔哩哔哩风控拦截，请稍后重试或重新登录。");
   });
 });
 
