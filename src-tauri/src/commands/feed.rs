@@ -50,14 +50,15 @@ pub async fn feed_ranking(
     Ok(state.bili.ranking(rid.unwrap_or(0)).await?)
 }
 
-/// 分区最新稿件
+/// 分区内容：ranking/v2（与官方 PC 一致；page 保留兼容，上游无分页）
 #[tauri::command]
 pub async fn feed_region(
     state: State<'_, AppState>,
     rid: u32,
     page: Option<u32>,
 ) -> AppResult<Vec<VideoCard>> {
-    Ok(state.bili.region_dynamic(rid, page.unwrap_or(1)).await?)
+    let _ = page;
+    Ok(state.bili.region_newlist(rid, 1).await?)
 }
 
 /// 收藏夹列表（用于选择）

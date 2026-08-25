@@ -25,7 +25,6 @@ const USER_CARD: &str = "https://api.bilibili.com/x/web-interface/card";
 const USER_ARC: &str = "https://api.bilibili.com/x/space/wbi/arc/search";
 const POPULAR: &str = "https://api.bilibili.com/x/web-interface/popular";
 const RANKING: &str = "https://api.bilibili.com/x/web-interface/ranking/v2";
-const REGION_DYNAMIC: &str = "https://api.bilibili.com/x/web-interface/dynamic/region";
 const FAV_RESOURCE: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const DYNAMIC_FEED: &str = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
 
@@ -744,24 +743,30 @@ impl BiliClient {
 
     /// 全站或主分区视频排行榜，按上游返回顺序保留名次。
     pub async fn ranking(&self, rid: u32) -> BiliResult<Vec<VideoCard>> {
-        let url = format!("{RANKING}?rid={rid}&type=all");
-        let value = self.get_json(&url).await?;
+        let value = self.ranking_json(rid).await?;
         check_code(&value)?;
         Ok(cards_from_ranking(&value))
     }
 
-    /// 分区最新稿件
-    pub async fn region_dynamic(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
-        let url = format!("{REGION_DYNAMIC}?rid={rid}&ps=30&pn={}", page.max(1));
-        let value = self.get_json(&url).await?;
-        check_code(&value)?;
-        Ok(value["data"]["archives"]
-            .as_array()
-            .cloned()
+    /// 分区内容：走官方 PC 端同款 ranking/v2（WBI），一次返回完整榜单，无 pn。
+    pub async fn region_newlist(&self, rid: u32, _page: u32) -> BiliResult<Vec<VideoCard>> {
+        let value = self.ranking_json(rid).await?;
+        parse_region_response(&value)
+    }
+
+    async fn ranking_json(&self, rid: u32) -> BiliResult<Value> {
+        let mut params = BTreeMap::new();
+        params.insert("rid".into(), rid.to_string());
+        params.insert("type".into(), "all".into());
+        let (img, sub) = self.ensure_wbi_keys().await?;
+        let mixin = wbi::mixin_key(&img, &sub);
+        let wts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .iter()
-            .filter_map(parse_card)
-            .collect())
+            .as_secs();
+        let signed = wbi::sign(params, &mixin, wts);
+        let url = format!("{RANKING}?{}", wbi::to_query(&signed));
+        self.get_json(&url).await
     }
 
     /// 收藏夹内容列表；media_id 为空时取默认收藏夹
@@ -806,7 +811,8 @@ impl BiliClient {
     /// 动态首页（仅保留视频类动态）
     pub async fn dynamic_feed(&self, offset: Option<&str>) -> BiliResult<DynamicFeedPage> {
         let mut params = BTreeMap::new();
-        params.insert("type".into(), "all".into());
+        // video：只拉投稿视频动态，避免图文/转发占页后被本地过滤成空
+        params.insert("type".into(), "video".into());
         if let Some(cursor) = offset.filter(|s| !s.is_empty()) {
             params.insert("offset".into(), cursor.to_string());
         }
@@ -825,6 +831,53 @@ impl BiliClient {
             items,
         })
     }
+}
+
+fn parse_region_response(value: &Value) -> BiliResult<Vec<VideoCard>> {
+    let code = value
+        .get("code")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| BiliError::Api("分区内容接口响应缺少错误码".into()))?;
+    if code != 0 {
+        let message = value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        return match code {
+            -101 => Err(BiliError::msg("未登录")),
+            -352 | -412 => Err(BiliError::msg("请求被风控，请稍后重试或重新登录")),
+            -509 => Err(BiliError::msg("请求过于频繁，请稍后再试")),
+            _ if message.contains("未登录") || message.contains("登录过期") => {
+                Err(BiliError::msg("未登录"))
+            }
+            _ if message.contains("风控") => {
+                Err(BiliError::msg("请求被风控，请稍后重试或重新登录"))
+            }
+            _ if message.contains("过于频繁") || message.contains("限流") => {
+                Err(BiliError::msg("请求过于频繁，请稍后再试"))
+            }
+            _ => Err(BiliError::Api(format!(
+                "分区内容接口暂不可用（上游错误码 {code}）"
+            ))),
+        };
+    }
+
+    let list = value
+        .get("data")
+        .and_then(|data| data.get("list"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| BiliError::Api("分区内容接口响应格式发生变化".into()))?;
+    if list.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let cards = list.iter().filter_map(parse_card).collect::<Vec<_>>();
+    if cards.is_empty() {
+        return Err(BiliError::Api(
+            "分区内容接口返回了无法识别的稿件数据".into(),
+        ));
+    }
+    Ok(cards)
 }
 
 fn unix_ms() -> u128 {
@@ -975,13 +1028,24 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
             .unwrap_or("")
             .to_string(),
         duration: parse_duration(value),
-        views: value["stat"]["view"]
-            .as_i64()
-            .or_else(|| value["play"].as_i64())
-            .unwrap_or(0),
+        views: {
+            let from_stat = parse_count(&value["stat"]["view"]);
+            if from_stat > 0 {
+                from_stat
+            } else {
+                let play = parse_count(&value["stat"]["play"]);
+                if play > 0 {
+                    play
+                } else {
+                    parse_count(&value["play"])
+                }
+            }
+        },
         aid: value["aid"]
             .as_i64()
+            .or_else(|| value["aid"].as_str().and_then(|s| s.parse().ok()))
             .or_else(|| value["id"].as_i64())
+            .or_else(|| value["id"].as_str().and_then(|s| s.parse().ok()))
             .unwrap_or(0),
         cid: value["cid"].as_i64().filter(|cid| *cid > 0),
         owner_face: https_url(
@@ -990,7 +1054,10 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
                 .or_else(|| value["face"].as_str())
                 .unwrap_or_default(),
         ),
-        mid: value["owner"]["mid"].as_i64().unwrap_or(0),
+        mid: value["owner"]["mid"]
+            .as_i64()
+            .or_else(|| value["owner"]["mid"].as_str().and_then(|s| s.parse().ok()))
+            .unwrap_or(0),
     })
 }
 
@@ -1027,35 +1094,20 @@ fn parse_search_card(value: &Value) -> Option<VideoCard> {
 
 fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     let dynamic_id = value["id_str"].as_str().unwrap_or_default().to_string();
-    let mut author_mid = 0_i64;
-    let mut author_name = String::new();
-    let mut author_face = String::new();
-    for module in value["modules"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-    {
-        if let Some(author) = module["module_author"].as_object() {
-            author_mid = author.get("mid").and_then(|v| v.as_i64()).unwrap_or(0);
-            author_name = author
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            author_face = https_url(
-                author
-                    .get("face")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default(),
-            );
-            break;
-        }
+    // polymer 动态：modules 是对象（module_author / module_dynamic），不是数组
+    let modules = value.get("modules")?;
+    let author = &modules["module_author"];
+    let author_mid = author["mid"]
+        .as_i64()
+        .or_else(|| author["mid"].as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0);
+    let author_name = author["name"].as_str().unwrap_or("").to_string();
+    let author_face = https_url(author["face"].as_str().unwrap_or_default());
+
+    let archive = &modules["module_dynamic"]["major"]["archive"];
+    if !archive.is_object() {
+        return None;
     }
-    let archive = &value["modules"].as_array().and_then(|arr| {
-        arr.iter()
-            .find(|m| m["module_dynamic"]["major"]["archive"].is_object())
-    })?["module_dynamic"]["major"]["archive"];
     let mut card = parse_card(archive)?;
     if card.owner.is_empty() {
         card.owner = author_name;
@@ -1063,7 +1115,9 @@ fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     if card.owner_face.is_empty() {
         card.owner_face = author_face;
     }
-    card.mid = author_mid;
+    if card.mid == 0 {
+        card.mid = author_mid;
+    }
     Some(DynamicCard {
         dynamic_id,
         card,
@@ -1071,11 +1125,47 @@ fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     })
 }
 
+fn parse_count(value: &Value) -> i64 {
+    if let Some(n) = value.as_i64() {
+        return n;
+    }
+    if let Some(n) = value.as_f64() {
+        return n as i64;
+    }
+    let Some(raw) = value.as_str() else {
+        return 0;
+    };
+    let s = raw.trim();
+    if s.is_empty() {
+        return 0;
+    }
+    if let Ok(n) = s.parse::<i64>() {
+        return n;
+    }
+    if let Ok(n) = s.parse::<f64>() {
+        return n as i64;
+    }
+    let (num, mult) = if let Some(rest) = s.strip_suffix('万') {
+        (rest, 10_000.0)
+    } else if let Some(rest) = s.strip_suffix('亿') {
+        (rest, 100_000_000.0)
+    } else {
+        return 0;
+    };
+    num.trim()
+        .parse::<f64>()
+        .map(|n| (n * mult) as i64)
+        .unwrap_or(0)
+}
+
 fn parse_duration(value: &Value) -> i64 {
     if let Some(n) = value["duration"].as_i64() {
         return n;
     }
-    if let Some(s) = value["duration"].as_str() {
+    let text = value["duration"]
+        .as_str()
+        .or_else(|| value["duration_text"].as_str());
+    if let Some(s) = text {
         let parts: Vec<i64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
         return match parts.as_slice() {
             [h, m, s] => h * 3600 + m * 60 + s,
@@ -1205,6 +1295,192 @@ mod tests {
         assert_eq!(card.cover, "https://i0.hdslb.com/bfs/cover.png");
         assert_eq!(card.duration, 125);
         assert_eq!(card.views, 88);
+    }
+
+    #[test]
+    fn parse_dynamic_card_from_polymer_object_modules() {
+        let item = json!({
+            "id_str": "950001234567890",
+            "modules": {
+                "module_author": {
+                    "mid": 12345,
+                    "name": "测试UP",
+                    "face": "//i0.hdslb.com/bfs/face/up.png"
+                },
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "aid": "112981396619958",
+                            "bvid": "BV1oeWNebEv2",
+                            "title": "老板娘今天是可爱鬼呀！",
+                            "cover": "http://i2.hdslb.com/bfs/archive/cover.jpg",
+                            "duration_text": "00:16",
+                            "stat": { "danmaku": "0", "play": "1.2万" }
+                        }
+                    }
+                }
+            }
+        });
+        let parsed = parse_dynamic_card(&item).expect("polymer archive dynamic should parse");
+        assert_eq!(parsed.dynamic_id, "950001234567890");
+        assert_eq!(parsed.author_mid, 12345);
+        assert_eq!(parsed.card.bvid, "BV1oeWNebEv2");
+        assert_eq!(parsed.card.owner, "测试UP");
+        assert_eq!(parsed.card.duration, 16);
+        assert_eq!(parsed.card.views, 12000);
+        assert_eq!(parsed.card.aid, 112981396619958);
+        assert_eq!(parsed.card.cover, "https://i2.hdslb.com/bfs/archive/cover.jpg");
+    }
+
+    #[test]
+    fn parse_dynamic_card_skips_non_archive() {
+        let item = json!({
+            "id_str": "1",
+            "modules": {
+                "module_author": { "mid": 1, "name": "up", "face": "" },
+                "module_dynamic": {
+                    "major": { "type": "MAJOR_TYPE_DRAW", "draw": {} }
+                }
+            }
+        });
+        assert!(parse_dynamic_card(&item).is_none());
+    }
+
+    #[test]
+    fn parse_count_supports_wan_suffix() {
+        assert_eq!(parse_count(&json!("1.2万")), 12000);
+        assert_eq!(parse_count(&json!("3亿")), 300_000_000);
+        assert_eq!(parse_count(&json!(42)), 42);
+        assert_eq!(parse_count(&json!("0")), 0);
+    }
+
+    #[test]
+    fn region_ranking_url_matches_official_pc_contract() {
+        let url = format!("{RANKING}?rid=1&type=all");
+        assert_eq!(
+            url,
+            "https://api.bilibili.com/x/web-interface/ranking/v2?rid=1&type=all"
+        );
+        assert!(!url.contains("newlist"));
+        assert!(!url.contains("dynamic/region"));
+        assert!(!url.contains("pn="));
+        assert!(format!("{RANKING}?rid=167&type=all").contains("rid=167"));
+    }
+
+    #[test]
+    fn region_response_parses_valid_ranking_list() {
+        let value = json!({
+            "code": 0,
+            "data": {
+                "list": [
+                    {
+                        "bvid": "BV1region1111",
+                        "title": "top",
+                        "pic": "//i0.hdslb.com/latest.jpg",
+                        "owner": { "name": "up" },
+                        "duration": 90,
+                        "stat": { "view": 42 }
+                    }
+                ]
+            }
+        });
+        let cards = parse_region_response(&value).expect("region fixture should parse");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].bvid, "BV1region1111");
+        assert_eq!(cards[0].owner, "up");
+    }
+
+    #[test]
+    fn region_response_accepts_a_genuine_empty_page() {
+        let value = json!({ "code": 0, "data": { "list": [] } });
+        assert!(parse_region_response(&value)
+            .expect("empty region page should be valid")
+            .is_empty());
+    }
+
+    #[test]
+    fn region_response_rejects_missing_or_invalid_list() {
+        for value in [
+            json!({ "code": 0 }),
+            json!({ "code": 0, "data": null }),
+            json!({ "code": 0, "data": {} }),
+            json!({ "code": 0, "data": { "list": null } }),
+            json!({ "code": 0, "data": { "list": {} } }),
+            json!({ "code": 0, "data": { "archives": [] } }),
+        ] {
+            let error = parse_region_response(&value).expect_err("invalid contract must fail");
+            assert!(error.to_string().contains("分区内容接口响应格式发生变化"));
+        }
+    }
+
+    #[test]
+    fn region_response_rejects_an_entirely_unparseable_page() {
+        let value = json!({
+            "code": 0,
+            "data": { "list": [{ "title": "missing bvid" }] }
+        });
+        let error = parse_region_response(&value).expect_err("invalid cards must fail");
+        assert!(error.to_string().contains("无法识别的稿件数据"));
+    }
+
+    #[test]
+    fn region_response_keeps_valid_cards_from_a_mixed_page() {
+        let value = json!({
+            "code": 0,
+            "data": {
+                "list": [
+                    { "title": "missing bvid" },
+                    { "bvid": "BV1region2222", "title": "valid" }
+                ]
+            }
+        });
+        let cards = parse_region_response(&value).expect("mixed page should keep valid cards");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].bvid, "BV1region2222");
+    }
+
+    #[test]
+    fn region_response_does_not_misclassify_collection_404() {
+        let value = json!({ "code": -404, "message": "啥都木有", "data": null });
+        let error = parse_region_response(&value).expect_err("upstream error should fail");
+        assert_eq!(error.code(), "api");
+        assert!(error.to_string().contains("分区内容接口暂不可用"));
+        assert!(!error.to_string().contains("稿件不存在"));
+        assert!(!error.to_string().contains("啥都木有"));
+    }
+
+    #[test]
+    fn region_response_preserves_auth_risk_and_rate_codes() {
+        let unauthenticated = json!({ "code": -101, "message": "账号未登录" });
+        let risk_control = json!({ "code": -412, "message": "请求被拦截" });
+        let rate_limited = json!({ "code": -509, "message": "请求过于频繁" });
+        let message_rate_limited = json!({ "code": -799, "message": "请求过于频繁" });
+
+        assert_eq!(
+            parse_region_response(&unauthenticated)
+                .expect_err("unauthenticated response should fail")
+                .code(),
+            "unauthenticated"
+        );
+        assert_eq!(
+            parse_region_response(&risk_control)
+                .expect_err("risk response should fail")
+                .code(),
+            "risk_control"
+        );
+        assert_eq!(
+            parse_region_response(&rate_limited)
+                .expect_err("rate-limited response should fail")
+                .code(),
+            "rate_limited"
+        );
+        assert_eq!(
+            parse_region_response(&message_rate_limited)
+                .expect_err("message-based rate limit should fail")
+                .code(),
+            "rate_limited"
+        );
     }
 
     #[test]
