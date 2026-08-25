@@ -25,7 +25,6 @@ const USER_CARD: &str = "https://api.bilibili.com/x/web-interface/card";
 const USER_ARC: &str = "https://api.bilibili.com/x/space/wbi/arc/search";
 const POPULAR: &str = "https://api.bilibili.com/x/web-interface/popular";
 const RANKING: &str = "https://api.bilibili.com/x/web-interface/ranking/v2";
-const REGION_NEWLIST: &str = "https://api.bilibili.com/x/web-interface/newlist";
 const FAV_RESOURCE: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const DYNAMIC_FEED: &str = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
 
@@ -744,16 +743,30 @@ impl BiliClient {
 
     /// 全站或主分区视频排行榜，按上游返回顺序保留名次。
     pub async fn ranking(&self, rid: u32) -> BiliResult<Vec<VideoCard>> {
-        let url = format!("{RANKING}?rid={rid}&type=all");
-        let value = self.get_json(&url).await?;
+        let value = self.ranking_json(rid).await?;
         check_code(&value)?;
         Ok(cards_from_ranking(&value))
     }
 
-    /// 分区最新稿件（newlist）
-    pub async fn region_newlist(&self, rid: u32, page: u32) -> BiliResult<Vec<VideoCard>> {
-        let value = self.get_json(&region_newlist_url(rid, page)).await?;
+    /// 分区内容：走官方 PC 端同款 ranking/v2（WBI），一次返回完整榜单，无 pn。
+    pub async fn region_newlist(&self, rid: u32, _page: u32) -> BiliResult<Vec<VideoCard>> {
+        let value = self.ranking_json(rid).await?;
         parse_region_response(&value)
+    }
+
+    async fn ranking_json(&self, rid: u32) -> BiliResult<Value> {
+        let mut params = BTreeMap::new();
+        params.insert("rid".into(), rid.to_string());
+        params.insert("type".into(), "all".into());
+        let (img, sub) = self.ensure_wbi_keys().await?;
+        let mixin = wbi::mixin_key(&img, &sub);
+        let wts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let signed = wbi::sign(params, &mixin, wts);
+        let url = format!("{RANKING}?{}", wbi::to_query(&signed));
+        self.get_json(&url).await
     }
 
     /// 收藏夹内容列表；media_id 为空时取默认收藏夹
@@ -819,10 +832,6 @@ impl BiliClient {
     }
 }
 
-fn region_newlist_url(rid: u32, page: u32) -> String {
-    format!("{REGION_NEWLIST}?rid={rid}&type=0&pn={}&ps=30", page.max(1))
-}
-
 fn parse_region_response(value: &Value) -> BiliResult<Vec<VideoCard>> {
     let code = value
         .get("code")
@@ -852,16 +861,16 @@ fn parse_region_response(value: &Value) -> BiliResult<Vec<VideoCard>> {
         };
     }
 
-    let archives = value
+    let list = value
         .get("data")
-        .and_then(|data| data.get("archives"))
+        .and_then(|data| data.get("list"))
         .and_then(Value::as_array)
         .ok_or_else(|| BiliError::Api("分区内容接口响应格式发生变化".into()))?;
-    if archives.is_empty() {
+    if list.is_empty() {
         return Ok(Vec::new());
     }
 
-    let cards = archives.iter().filter_map(parse_card).collect::<Vec<_>>();
+    let cards = list.iter().filter_map(parse_card).collect::<Vec<_>>();
     if cards.is_empty() {
         return Err(BiliError::Api(
             "分区内容接口返回了无法识别的稿件数据".into(),
@@ -1251,25 +1260,27 @@ mod tests {
     }
 
     #[test]
-    fn region_newlist_url_uses_latest_feed_contract() {
-        let url = region_newlist_url(167, 0);
+    fn region_ranking_url_matches_official_pc_contract() {
+        let url = format!("{RANKING}?rid=1&type=all");
         assert_eq!(
             url,
-            "https://api.bilibili.com/x/web-interface/newlist?rid=167&type=0&pn=1&ps=30"
+            "https://api.bilibili.com/x/web-interface/ranking/v2?rid=1&type=all"
         );
+        assert!(!url.contains("newlist"));
         assert!(!url.contains("dynamic/region"));
-        assert!(region_newlist_url(1, 3).contains("pn=3"));
+        assert!(!url.contains("pn="));
+        assert!(format!("{RANKING}?rid=167&type=all").contains("rid=167"));
     }
 
     #[test]
-    fn region_response_parses_valid_archives() {
+    fn region_response_parses_valid_ranking_list() {
         let value = json!({
             "code": 0,
             "data": {
-                "archives": [
+                "list": [
                     {
                         "bvid": "BV1region1111",
-                        "title": "latest",
+                        "title": "top",
                         "pic": "//i0.hdslb.com/latest.jpg",
                         "owner": { "name": "up" },
                         "duration": 90,
@@ -1286,20 +1297,21 @@ mod tests {
 
     #[test]
     fn region_response_accepts_a_genuine_empty_page() {
-        let value = json!({ "code": 0, "data": { "archives": [] } });
+        let value = json!({ "code": 0, "data": { "list": [] } });
         assert!(parse_region_response(&value)
             .expect("empty region page should be valid")
             .is_empty());
     }
 
     #[test]
-    fn region_response_rejects_missing_or_invalid_archives() {
+    fn region_response_rejects_missing_or_invalid_list() {
         for value in [
             json!({ "code": 0 }),
             json!({ "code": 0, "data": null }),
             json!({ "code": 0, "data": {} }),
-            json!({ "code": 0, "data": { "archives": null } }),
-            json!({ "code": 0, "data": { "archives": {} } }),
+            json!({ "code": 0, "data": { "list": null } }),
+            json!({ "code": 0, "data": { "list": {} } }),
+            json!({ "code": 0, "data": { "archives": [] } }),
         ] {
             let error = parse_region_response(&value).expect_err("invalid contract must fail");
             assert!(error.to_string().contains("分区内容接口响应格式发生变化"));
@@ -1310,7 +1322,7 @@ mod tests {
     fn region_response_rejects_an_entirely_unparseable_page() {
         let value = json!({
             "code": 0,
-            "data": { "archives": [{ "title": "missing bvid" }] }
+            "data": { "list": [{ "title": "missing bvid" }] }
         });
         let error = parse_region_response(&value).expect_err("invalid cards must fail");
         assert!(error.to_string().contains("无法识别的稿件数据"));
@@ -1321,7 +1333,7 @@ mod tests {
         let value = json!({
             "code": 0,
             "data": {
-                "archives": [
+                "list": [
                     { "title": "missing bvid" },
                     { "bvid": "BV1region2222", "title": "valid" }
                 ]

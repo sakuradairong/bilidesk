@@ -7,13 +7,13 @@ import { VideoGridPage } from "@/pages/VideoGridPage";
 import { PopularFeed } from "@/pages/PopularPage";
 import { RegionFeed } from "@/pages/RegionPage";
 import { DynamicFeedView } from "@/pages/DynamicPage";
-import { RankingFeed } from "@/pages/RankingPage";
-import { openWatch, routeSource } from "@/lib/watch";import type { VideoCard } from "@/types";
+import { normalizeDiscoverSearch } from "@/lib/discover-tabs";
+import { openWatch, routeSource } from "@/lib/watch";
+import type { VideoCard } from "@/types";
 
 const TABS = [
   { key: "recommend", label: "推荐" },
   { key: "hot", label: "热门" },
-  { key: "ranking", label: "排行" },
   { key: "region", label: "分区" },
   { key: "dynamic", label: "动态" },
 ] as const;
@@ -70,7 +70,16 @@ export function HomePage() {
   const [idx, setIdx] = useState(() => recommendCache.idx);
   const [loading, setLoading] = useState(() => !recommendCache.initialized);
   const [error, setError] = useState("");
-  const raw = params.get("tab") as TabKey | null;
+  const [regionRefreshNonce, setRegionRefreshNonce] = useState(0);
+  const [regionLoading, setRegionLoading] = useState(false);
+
+  useEffect(() => {
+    const next = normalizeDiscoverSearch(params);
+    if (next) setParams(next, { replace: true });
+  }, [params, setParams]);
+
+  const effectiveParams = normalizeDiscoverSearch(params) ?? params;
+  const raw = effectiveParams.get("tab");
   const tab: TabKey = TABS.some((t) => t.key === raw)
     ? (raw as TabKey)
     : "recommend";
@@ -136,6 +145,21 @@ export function HomePage() {
               {loading ? "刷新中…" : "刷新推荐"}
             </Button>
           ) : null}
+          {tab === "region" ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="home-refresh-button rounded-full"
+              disabled={regionLoading}
+              onClick={() => setRegionRefreshNonce((n) => n + 1)}
+            >
+              <RefreshCw
+                className={`size-4${regionLoading ? " animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {regionLoading ? "刷新中…" : "刷新榜单"}
+            </Button>
+          ) : null}
           <div className="pill-tabs" role="tablist" aria-label="首页内容">
             {TABS.map((item) => (
               <button
@@ -162,8 +186,13 @@ export function HomePage() {
         />
       ) : null}
       {tab === "hot" ? <PopularFeed /> : null}
-      {tab === "ranking" ? <RankingFeed /> : null}
-      {tab === "region" ? <RegionFeed /> : null}
+      {tab === "region" ? (
+        <RegionFeed
+          refreshNonce={regionRefreshNonce}
+          onRefreshRequest={() => setRegionRefreshNonce((n) => n + 1)}
+          onLoadingChange={setRegionLoading}
+        />
+      ) : null}
       {tab === "dynamic" ? <DynamicFeedView /> : null}
     </div>
   );

@@ -4,7 +4,6 @@ import {
   canLoadMoreRegionFeed,
   createRegionFeedState,
   isRegionFeedLoading,
-  REGION_PAGE_SIZE,
   regionFeedReducer,
 } from "./region-feed";
 import type { VideoCard } from "@/types";
@@ -20,22 +19,17 @@ function card(index: number): VideoCard {
   };
 }
 
-function fullPage(offset = 0): VideoCard[] {
-  return Array.from({ length: REGION_PAGE_SIZE }, (_, index) =>
-    card(index + offset),
-  );
-}
-
 describe("region feed state", () => {
   it("starts in a loading state without exposing an empty page", () => {
     const state = createRegionFeedState();
 
     expect(state.phase).toBe("initial-loading");
+    expect(state.hasMore).toBe(false);
     expect(isRegionFeedLoading(state)).toBe(true);
     expect(canLoadMoreRegionFeed(state)).toBe(false);
   });
 
-  it("replaces the first page and appends later pages", () => {
+  it("replaces items from a ranking response and never offers load more", () => {
     let state = regionFeedReducer(createRegionFeedState(), {
       type: "start",
       requestId: 1,
@@ -45,128 +39,19 @@ describe("region feed state", () => {
       type: "success",
       requestId: 1,
       page: 1,
-      items: fullPage(),
+      items: [card(1), card(2), card(1)],
     });
 
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE);
+    expect(state.items.map((item) => item.bvid)).toEqual([
+      "BV1region1",
+      "BV1region2",
+    ]);
     expect(state.nextPage).toBe(2);
-    expect(state.hasMore).toBe(true);
-    expect(canLoadMoreRegionFeed(state)).toBe(true);
-
-    state = regionFeedReducer(state, {
-      type: "start",
-      requestId: 2,
-      page: 2,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 2,
-      page: 2,
-      items: [card(100)],
-    });
-
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE + 1);
-    expect(state.items[state.items.length - 1]?.bvid).toBe("BV1region100");
-    expect(state.nextPage).toBe(3);
-    expect(state.hasMore).toBe(false);
-  });
-
-  it("stops paging when a short page still adds cards", () => {
-    let state = regionFeedReducer(createRegionFeedState(), {
-      type: "start",
-      requestId: 1,
-      page: 1,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 1,
-      page: 1,
-      items: fullPage(),
-    });
-    state = regionFeedReducer(state, {
-      type: "start",
-      requestId: 2,
-      page: 2,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 2,
-      page: 2,
-      items: [card(100), card(101)],
-    });
-
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE + 2);
     expect(state.hasMore).toBe(false);
     expect(canLoadMoreRegionFeed(state)).toBe(false);
   });
 
-  it("keeps paging when a full overlapping page still adds cards", () => {
-    const firstPage = fullPage();
-    const overlappingPage = [
-      firstPage[0]!,
-      ...fullPage(100).slice(0, REGION_PAGE_SIZE - 1),
-    ];
-    let state = regionFeedReducer(createRegionFeedState(), {
-      type: "start",
-      requestId: 1,
-      page: 1,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 1,
-      page: 1,
-      items: firstPage,
-    });
-    state = regionFeedReducer(state, {
-      type: "start",
-      requestId: 2,
-      page: 2,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 2,
-      page: 2,
-      items: overlappingPage,
-    });
-
-    expect(overlappingPage).toHaveLength(REGION_PAGE_SIZE);
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE * 2 - 1);
-    expect(state.items[state.items.length - 1]?.bvid).toBe(
-      `BV1region${100 + REGION_PAGE_SIZE - 2}`,
-    );
-    expect(state.hasMore).toBe(true);
-  });
-
-  it("drops a repeated page and stops pagination", () => {
-    const firstPage = fullPage();
-    let state = regionFeedReducer(createRegionFeedState(), {
-      type: "start",
-      requestId: 1,
-      page: 1,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 1,
-      page: 1,
-      items: firstPage,
-    });
-    state = regionFeedReducer(state, {
-      type: "start",
-      requestId: 2,
-      page: 2,
-    });
-    state = regionFeedReducer(state, {
-      type: "success",
-      requestId: 2,
-      page: 2,
-      items: firstPage,
-    });
-
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE);
-    expect(state.hasMore).toBe(false);
-  });
-
-  it("treats an empty successful page as normal pagination completion", () => {
+  it("treats an empty successful ranking response as idle completion", () => {
     let state = regionFeedReducer(createRegionFeedState(), {
       type: "start",
       requestId: 1,
@@ -195,24 +80,22 @@ describe("region feed state", () => {
       type: "success",
       requestId: 1,
       page: 1,
-      items: fullPage(),
+      items: [card(1)],
     });
     state = regionFeedReducer(state, {
       type: "start",
       requestId: 2,
-      page: 2,
+      page: 1,
     });
     state = regionFeedReducer(state, {
       type: "failure",
       requestId: 2,
-      page: 2,
+      page: 1,
       error: "network",
     });
 
-    expect(state.items).toHaveLength(REGION_PAGE_SIZE);
-    expect(state.nextPage).toBe(2);
-    expect(state.hasMore).toBe(true);
-    expect(state.failedPage).toBe(2);
+    expect(state.items).toHaveLength(1);
+    expect(state.failedPage).toBe(1);
     expect(canLoadMoreRegionFeed(state)).toBe(false);
   });
 

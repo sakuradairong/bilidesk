@@ -3,13 +3,17 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { feedRegion, toAppError } from "@/api";
 import { VideoGridPage } from "@/pages/VideoGridPage";
 import {
-  canLoadMoreRegionFeed,
   createRegionFeedState,
   isRegionFeedLoading,
   regionFeedReducer,
 } from "@/lib/region-feed";
+import { isHotkeyIgnored } from "@/lib/hotkeys";
 import {
-  REGIONS,
+  adjacentRegionRid,
+  regionRidForDigit,
+} from "@/lib/region-hotkeys";
+import {
+  REGION_CHIPS,
   regionSearchParams,
   resolveRegionRid,
 } from "@/lib/regions";
@@ -19,9 +23,10 @@ import { cn } from "@/lib/utils";
 
 type RegionFeedContentProps = {
   rid: number;
+  onLoadingChange?: (loading: boolean) => void;
 };
 
-function RegionFeedContent({ rid }: RegionFeedContentProps) {
+function RegionFeedContent({ rid, onLoadingChange }: RegionFeedContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [state, dispatch] = useReducer(
@@ -74,44 +79,98 @@ function RegionFeedContent({ rid }: RegionFeedContentProps) {
   }, [requestPage]);
 
   const loading = isRegionFeedLoading(state);
-  const canLoadMore = canLoadMoreRegionFeed(state);
   const retryPage = state.failedPage;
+
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
 
   return (
     <VideoGridPage
       items={state.items}
       loading={loading}
       error={state.error}
+      ranked
       onOpen={(bvid) => openWatch(navigate, bvid, routeSource(location))}
-      onMore={
-        canLoadMore ? () => void requestPage(state.nextPage) : undefined
-      }
       onRetry={
         retryPage == null ? undefined : () => void requestPage(retryPage)
       }
-      emptyTitle="该分区暂时没有稿件"
+      emptyTitle="该分区暂时没有排行内容"
+      emptyDescription="稍后重试，或切换到其他分区"
     />
   );
 }
 
-export function RegionFeed() {
+type RegionFeedProps = {
+  refreshNonce?: number;
+  onRefreshRequest?: () => void;
+  onLoadingChange?: (loading: boolean) => void;
+};
+
+export function RegionFeed({
+  refreshNonce = 0,
+  onRefreshRequest,
+  onLoadingChange,
+}: RegionFeedProps = {}) {
   const [params, setParams] = useSearchParams();
   const rawRid = params.get("rid");
   const rid = resolveRegionRid(rawRid);
 
   useEffect(() => {
+    if (params.get("tab") === "ranking") return;
+    if (params.get("rankRid") != null && rawRid == null) return;
     if (rawRid === String(rid) && params.get("tab") === "region") return;
     setParams(regionSearchParams(params, rid), { replace: true });
   }, [params, rawRid, rid, setParams]);
 
-  function switchRegion(nextRid: number) {
-    setParams(regionSearchParams(params, nextRid), { replace: true });
-  }
+  const switchRegion = useCallback(
+    (nextRid: number) => {
+      setParams(regionSearchParams(params, nextRid), { replace: true });
+    },
+    [params, setParams],
+  );
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (isHotkeyIgnored(event.target)) return;
+      if (event.repeat) return;
+
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        onRefreshRequest?.();
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        switchRegion(adjacentRegionRid(REGION_CHIPS, rid, -1));
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        switchRegion(adjacentRegionRid(REGION_CHIPS, rid, 1));
+        return;
+      }
+
+      const digit = Number(event.key);
+      if (Number.isInteger(digit) && digit >= 1 && digit <= 9) {
+        const next = regionRidForDigit(REGION_CHIPS, digit);
+        if (next != null) {
+          event.preventDefault();
+          switchRegion(next);
+        }
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onRefreshRequest, rid, switchRegion]);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="section-chips" aria-label="视频分区">
-        {REGIONS.map((region) => (
+        {REGION_CHIPS.map((region) => (
           <button
             key={region.rid}
             type="button"
@@ -125,7 +184,11 @@ export function RegionFeed() {
           </button>
         ))}
       </div>
-      <RegionFeedContent key={rid} rid={rid} />
+      <RegionFeedContent
+        key={`${rid}-${refreshNonce}`}
+        rid={rid}
+        onLoadingChange={onLoadingChange}
+      />
     </div>
   );
 }

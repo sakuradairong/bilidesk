@@ -1,7 +1,5 @@
 import type { VideoCard } from "@/types";
 
-export const REGION_PAGE_SIZE = 30;
-
 export type RegionFeedPhase = "initial-loading" | "idle" | "loading-more";
 
 export type RegionFeedState = {
@@ -28,7 +26,7 @@ export function createRegionFeedState(): RegionFeedState {
   return {
     items: [],
     nextPage: 1,
-    hasMore: true,
+    hasMore: false,
     phase: "initial-loading",
     requestId: null,
     failedPage: null,
@@ -65,20 +63,18 @@ export function regionFeedReducer(
     };
   }
 
-  const seen = new Set(
-    action.page === 1 ? [] : state.items.map((item) => item.bvid),
-  );
-  const newItems = action.items.filter((item) => {
+  const seen = new Set<string>();
+  const items = action.items.filter((item) => {
     if (seen.has(item.bvid)) return false;
     seen.add(item.bvid);
     return true;
   });
 
+  // ranking/v2 无分页：任意成功响应都结束加载更多。
   return {
-    items: action.page === 1 ? newItems : [...state.items, ...newItems],
+    items,
     nextPage: action.page + 1,
-    hasMore:
-      action.items.length >= REGION_PAGE_SIZE && newItems.length > 0,
+    hasMore: false,
     phase: "idle",
     requestId: null,
     failedPage: null,

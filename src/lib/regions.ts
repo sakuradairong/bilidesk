@@ -27,18 +27,29 @@ export const REGIONS: { rid: number; name: string }[] = [
   { rid: 181, name: "影视" },
 ];
 
+/** ranking/v2 不支持的 OGV 主分区（与官方 PC / 排行页一致）。 */
+const REGION_FEED_UNSUPPORTED = new Set([13, 167, 168]);
+
+/** 分区页可用的 UGC 主分区（ranking/v2）。 */
+export const REGION_FEED_REGIONS: { rid: number; name: string }[] =
+  REGIONS.filter((region) => !REGION_FEED_UNSUPPORTED.has(region.rid));
+
+export const REGION_CHIPS: { rid: number; name: string }[] = [
+  { rid: 0, name: "全站" },
+  ...REGION_FEED_REGIONS,
+];
+
 export function resolveRegionRid(value: string | null): number {
-  if (value == null || value.trim() === "") return REGIONS[0].rid;
+  const fallback = REGION_FEED_REGIONS[0]?.rid ?? REGIONS[0].rid;
+  if (value == null || value.trim() === "") return fallback;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed)) return REGIONS[0].rid;
-  if (parsed === 168) return 167;
-  return REGIONS.some((region) => region.rid === parsed)
+  if (!Number.isInteger(parsed)) return fallback;
+  if (parsed === 0) return 0;
+  if (REGION_FEED_UNSUPPORTED.has(parsed)) return fallback;
+  return REGION_FEED_REGIONS.some((region) => region.rid === parsed)
     ? parsed
-    : REGIONS[0].rid;
+    : fallback;
 }
 
 /** 排行榜接口支持的全站及 UGC 主分区。 */
-export const RANKING_REGIONS: { rid: number; name: string }[] = [
-  { rid: 0, name: "全站" },
-  ...REGIONS.filter((region) => ![13, 167].includes(region.rid)),
-];
+export const RANKING_REGIONS: { rid: number; name: string }[] = REGION_CHIPS;
