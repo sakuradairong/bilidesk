@@ -27,3 +27,6 @@ src-tauri/tauri.signing.json
 *.njsproj
 *.sln
 *.sw?
+
+# Local agent / SDD scratch
+.superpowers/
