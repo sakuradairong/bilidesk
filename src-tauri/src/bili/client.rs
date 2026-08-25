@@ -1330,7 +1330,10 @@ mod tests {
         assert_eq!(parsed.card.duration, 16);
         assert_eq!(parsed.card.views, 12000);
         assert_eq!(parsed.card.aid, 112981396619958);
-        assert_eq!(parsed.card.cover, "https://i2.hdslb.com/bfs/archive/cover.jpg");
+        assert_eq!(
+            parsed.card.cover,
+            "https://i2.hdslb.com/bfs/archive/cover.jpg"
+        );
     }
 
     #[test]
