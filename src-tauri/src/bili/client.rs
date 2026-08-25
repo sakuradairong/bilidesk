@@ -811,7 +811,8 @@ impl BiliClient {
     /// 动态首页（仅保留视频类动态）
     pub async fn dynamic_feed(&self, offset: Option<&str>) -> BiliResult<DynamicFeedPage> {
         let mut params = BTreeMap::new();
-        params.insert("type".into(), "all".into());
+        // video：只拉投稿视频动态，避免图文/转发占页后被本地过滤成空
+        params.insert("type".into(), "video".into());
         if let Some(cursor) = offset.filter(|s| !s.is_empty()) {
             params.insert("offset".into(), cursor.to_string());
         }
@@ -1027,13 +1028,24 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
             .unwrap_or("")
             .to_string(),
         duration: parse_duration(value),
-        views: value["stat"]["view"]
-            .as_i64()
-            .or_else(|| value["play"].as_i64())
-            .unwrap_or(0),
+        views: {
+            let from_stat = parse_count(&value["stat"]["view"]);
+            if from_stat > 0 {
+                from_stat
+            } else {
+                let play = parse_count(&value["stat"]["play"]);
+                if play > 0 {
+                    play
+                } else {
+                    parse_count(&value["play"])
+                }
+            }
+        },
         aid: value["aid"]
             .as_i64()
+            .or_else(|| value["aid"].as_str().and_then(|s| s.parse().ok()))
             .or_else(|| value["id"].as_i64())
+            .or_else(|| value["id"].as_str().and_then(|s| s.parse().ok()))
             .unwrap_or(0),
         cid: value["cid"].as_i64().filter(|cid| *cid > 0),
         owner_face: https_url(
@@ -1042,7 +1054,10 @@ fn parse_card(value: &Value) -> Option<VideoCard> {
                 .or_else(|| value["face"].as_str())
                 .unwrap_or_default(),
         ),
-        mid: value["owner"]["mid"].as_i64().unwrap_or(0),
+        mid: value["owner"]["mid"]
+            .as_i64()
+            .or_else(|| value["owner"]["mid"].as_str().and_then(|s| s.parse().ok()))
+            .unwrap_or(0),
     })
 }
 
@@ -1079,35 +1094,20 @@ fn parse_search_card(value: &Value) -> Option<VideoCard> {
 
 fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     let dynamic_id = value["id_str"].as_str().unwrap_or_default().to_string();
-    let mut author_mid = 0_i64;
-    let mut author_name = String::new();
-    let mut author_face = String::new();
-    for module in value["modules"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-    {
-        if let Some(author) = module["module_author"].as_object() {
-            author_mid = author.get("mid").and_then(|v| v.as_i64()).unwrap_or(0);
-            author_name = author
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            author_face = https_url(
-                author
-                    .get("face")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default(),
-            );
-            break;
-        }
+    // polymer 动态：modules 是对象（module_author / module_dynamic），不是数组
+    let modules = value.get("modules")?;
+    let author = &modules["module_author"];
+    let author_mid = author["mid"]
+        .as_i64()
+        .or_else(|| author["mid"].as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0);
+    let author_name = author["name"].as_str().unwrap_or("").to_string();
+    let author_face = https_url(author["face"].as_str().unwrap_or_default());
+
+    let archive = &modules["module_dynamic"]["major"]["archive"];
+    if !archive.is_object() {
+        return None;
     }
-    let archive = &value["modules"].as_array().and_then(|arr| {
-        arr.iter()
-            .find(|m| m["module_dynamic"]["major"]["archive"].is_object())
-    })?["module_dynamic"]["major"]["archive"];
     let mut card = parse_card(archive)?;
     if card.owner.is_empty() {
         card.owner = author_name;
@@ -1115,7 +1115,9 @@ fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     if card.owner_face.is_empty() {
         card.owner_face = author_face;
     }
-    card.mid = author_mid;
+    if card.mid == 0 {
+        card.mid = author_mid;
+    }
     Some(DynamicCard {
         dynamic_id,
         card,
@@ -1123,11 +1125,47 @@ fn parse_dynamic_card(value: &Value) -> Option<DynamicCard> {
     })
 }
 
+fn parse_count(value: &Value) -> i64 {
+    if let Some(n) = value.as_i64() {
+        return n;
+    }
+    if let Some(n) = value.as_f64() {
+        return n as i64;
+    }
+    let Some(raw) = value.as_str() else {
+        return 0;
+    };
+    let s = raw.trim();
+    if s.is_empty() {
+        return 0;
+    }
+    if let Ok(n) = s.parse::<i64>() {
+        return n;
+    }
+    if let Ok(n) = s.parse::<f64>() {
+        return n as i64;
+    }
+    let (num, mult) = if let Some(rest) = s.strip_suffix('万') {
+        (rest, 10_000.0)
+    } else if let Some(rest) = s.strip_suffix('亿') {
+        (rest, 100_000_000.0)
+    } else {
+        return 0;
+    };
+    num.trim()
+        .parse::<f64>()
+        .map(|n| (n * mult) as i64)
+        .unwrap_or(0)
+}
+
 fn parse_duration(value: &Value) -> i64 {
     if let Some(n) = value["duration"].as_i64() {
         return n;
     }
-    if let Some(s) = value["duration"].as_str() {
+    let text = value["duration"]
+        .as_str()
+        .or_else(|| value["duration_text"].as_str());
+    if let Some(s) = text {
         let parts: Vec<i64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
         return match parts.as_slice() {
             [h, m, s] => h * 3600 + m * 60 + s,
@@ -1257,6 +1295,64 @@ mod tests {
         assert_eq!(card.cover, "https://i0.hdslb.com/bfs/cover.png");
         assert_eq!(card.duration, 125);
         assert_eq!(card.views, 88);
+    }
+
+    #[test]
+    fn parse_dynamic_card_from_polymer_object_modules() {
+        let item = json!({
+            "id_str": "950001234567890",
+            "modules": {
+                "module_author": {
+                    "mid": 12345,
+                    "name": "测试UP",
+                    "face": "//i0.hdslb.com/bfs/face/up.png"
+                },
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "aid": "112981396619958",
+                            "bvid": "BV1oeWNebEv2",
+                            "title": "老板娘今天是可爱鬼呀！",
+                            "cover": "http://i2.hdslb.com/bfs/archive/cover.jpg",
+                            "duration_text": "00:16",
+                            "stat": { "danmaku": "0", "play": "1.2万" }
+                        }
+                    }
+                }
+            }
+        });
+        let parsed = parse_dynamic_card(&item).expect("polymer archive dynamic should parse");
+        assert_eq!(parsed.dynamic_id, "950001234567890");
+        assert_eq!(parsed.author_mid, 12345);
+        assert_eq!(parsed.card.bvid, "BV1oeWNebEv2");
+        assert_eq!(parsed.card.owner, "测试UP");
+        assert_eq!(parsed.card.duration, 16);
+        assert_eq!(parsed.card.views, 12000);
+        assert_eq!(parsed.card.aid, 112981396619958);
+        assert_eq!(parsed.card.cover, "https://i2.hdslb.com/bfs/archive/cover.jpg");
+    }
+
+    #[test]
+    fn parse_dynamic_card_skips_non_archive() {
+        let item = json!({
+            "id_str": "1",
+            "modules": {
+                "module_author": { "mid": 1, "name": "up", "face": "" },
+                "module_dynamic": {
+                    "major": { "type": "MAJOR_TYPE_DRAW", "draw": {} }
+                }
+            }
+        });
+        assert!(parse_dynamic_card(&item).is_none());
+    }
+
+    #[test]
+    fn parse_count_supports_wan_suffix() {
+        assert_eq!(parse_count(&json!("1.2万")), 12000);
+        assert_eq!(parse_count(&json!("3亿")), 300_000_000);
+        assert_eq!(parse_count(&json!(42)), 42);
+        assert_eq!(parse_count(&json!("0")), 0);
     }
 
     #[test]
