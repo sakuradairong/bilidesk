@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BiliDesk.App/BiliDesk.App.csproj" />
+    <Project Path="src/BiliDesk.Core/BiliDesk.Core.csproj" />
+    <Project Path="src/BiliDesk.Infrastructure/BiliDesk.Infrastructure.csproj" />
+    <Project Path="src/BiliDesk.Windows/BiliDesk.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BiliDesk.Core.Tests/BiliDesk.Core.Tests.csproj" />
+    <Project Path="tests/BiliDesk.Infrastructure.Tests/BiliDesk.Infrastructure.Tests.csproj" />
+    <Project Path="tests/BiliDesk.Windows.Tests/BiliDesk.Windows.Tests.csproj" />
+  </Folder>
+</Solution>

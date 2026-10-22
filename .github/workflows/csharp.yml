@@ -1,0 +1,70 @@
+name: CSharp preview
+
+on:
+  pull_request:
+    paths: ["csharp/**", ".github/workflows/csharp.yml"]
+  push:
+    paths: ["csharp/**", ".github/workflows/csharp.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csharp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: csharp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: csharp/global.json
+      - name: Restore portable tests
+        run: |
+          dotnet restore tests/BiliDesk.Core.Tests --locked-mode
+          dotnet restore tests/BiliDesk.Infrastructure.Tests --locked-mode
+      - name: Test portable modules
+        run: |
+          dotnet test tests/BiliDesk.Core.Tests -c Release --no-restore --logger trx
+          dotnet test tests/BiliDesk.Infrastructure.Tests -c Release --no-restore --logger trx
+      - name: Check formatting
+        run: dotnet format BiliDesk.Portable.slnx --verify-no-changes --no-restore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csharp-portable-tests
+          path: csharp/tests/**/TestResults/*.trx
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: csharp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: csharp/global.json
+      - name: Restore Windows solution
+        run: dotnet restore BiliDesk.slnx --locked-mode
+      - name: Compile WinUI preview
+        run: dotnet build src/BiliDesk.App -c Release --no-restore
+      - name: Run Windows adapter tests
+        run: dotnet test tests/BiliDesk.Windows.Tests -c Release --no-restore --logger trx
+      - name: Run portable tests on Windows
+        run: |
+          dotnet test tests/BiliDesk.Core.Tests -c Release --no-restore --logger trx
+          dotnet test tests/BiliDesk.Infrastructure.Tests -c Release --no-restore --logger trx
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csharp-windows-tests
+          path: csharp/tests/**/TestResults/*.trx
+          if-no-files-found: ignore

@@ -1,0 +1,22 @@
+<Window
+    x:Class="BiliDesk.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="BiliDesk C# Preview">
+    <Grid Padding="32" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="BiliDesk — C# Preview" FontSize="28" />
+        <TextBlock Grid.Row="1"
+                   Text="工程基线：尚未集成登录、播放器或旧数据导入入口。"
+                   TextWrapping="Wrap" />
+        <Border Grid.Row="2" Padding="24" CornerRadius="12"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+            <TextBlock Text="M1：播放器与窗口技术探针待验收"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+    </Grid>
+</Window>
